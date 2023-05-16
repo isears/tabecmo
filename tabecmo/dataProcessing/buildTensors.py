@@ -19,6 +19,7 @@ if __name__ == "__main__":
 
         unit = unit.replace("unit_", "")
         unit = unit.replace(" ", ".")
+        unit = unit.replace("/", "-")
 
         if "(" in unit:
             cut_idx = unit.index("(")

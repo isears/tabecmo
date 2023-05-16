@@ -246,7 +246,9 @@ class UnlabeledDataset(DerivedDataset):
 class LabeledEcmoDataset(DerivedDataset):
     def __init__(self):
         self.ecmoevents = pd.read_parquet("cache/ecmoevents.parquet")
+
         self.labels = pd.read_parquet("cache/studygroups.parquet")
+        ecmo_stayids = self.labels[self.labels["ECMO"] == 1]["stay_id"].to_list()
         self.labels = self.labels.set_index("stay_id")
         self.labels = self.labels[
             [c for c in self.labels.columns if c.startswith("comp_")]
@@ -257,7 +259,7 @@ class LabeledEcmoDataset(DerivedDataset):
             columns=["comp_any_thrombosis", "comp_any_hemorrhage", "comp_any_stroke"]
         )
 
-        super().__init__(self.ecmoevents["stay_id"].unique().tolist())
+        super().__init__(ecmo_stayids)
 
     def __getitem__(self, index: int):
         stay_id = self.stay_ids[index]

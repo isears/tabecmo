@@ -115,6 +115,8 @@ def get_hadm_label_map(hadm_ids: list):
 
 if __name__ == "__main__":
     icustays = pd.read_csv("mimiciv/icu/icustays.csv")
+    icustays["intime"] = pd.to_datetime(icustays["intime"])
+    icustays["outtime"] = pd.to_datetime(icustays["outtime"])
 
     # Get df by careunit
     icustays = pd.get_dummies(
@@ -136,8 +138,26 @@ if __name__ == "__main__":
     # Get ECMO label
     ecmo_events = pd.read_parquet("cache/ecmoevents.parquet")
     ecmo_stayids = ecmo_events["stay_id"].unique()
+    first_cannulation_events = (
+        ecmo_events[(ecmo_events["itemid"].isin([229268, 229840]))]
+        .groupby("stay_id")["charttime"]
+        .agg("max")
+    )
 
     icustays["ECMO"] = icustays["stay_id"].apply(lambda sid: int(sid in ecmo_stayids))
+
+    # Some first-cannulations happen after outtime, for some reason, so we will drop them
+    icustays = pd.merge(
+        icustays,
+        first_cannulation_events.rename("cannulationtime"),
+        how="left",
+        left_on="stay_id",
+        right_index=True,
+    )
+
+    icustays = icustays[
+        (icustays["ECMO"] == 0) | (icustays["cannulationtime"] < icustays["outtime"])
+    ]
 
     # drop double stays if not ECMO
     has_multiple_stays = icustays.groupby("hadm_id").apply(lambda g: len(g) > 1)
