@@ -243,6 +243,46 @@ class UnlabeledDataset(DerivedDataset):
         return torch.tensor(X_ffill.transpose().to_numpy()[:, -1])
 
 
+class LabeledEcmoDataset(DerivedDataset):
+    def __init__(self):
+        self.ecmoevents = pd.read_parquet("cache/ecmoevents.parquet")
+        self.labels = pd.read_parquet("cache/studygroups.parquet")
+        self.labels = self.labels.set_index("stay_id")
+        self.labels = self.labels[
+            [c for c in self.labels.columns if c.startswith("comp_")]
+        ]
+
+        # For now, use the broad categories
+        self.labels = self.labels.reindex(
+            columns=["comp_any_thrombosis", "comp_any_hemorrhage", "comp_any_stroke"]
+        )
+
+        super().__init__(self.ecmoevents["stay_id"].unique().tolist())
+
+    def __getitem__(self, index: int):
+        stay_id = self.stay_ids[index]
+
+        cannulation_events = self.ecmoevents[
+            (self.ecmoevents["stay_id"] == stay_id)
+            & (self.ecmoevents["itemid"].isin([229268, 229840]))
+        ]
+
+        cannulation_time = cannulation_events["charttime"].min()
+
+        X = self.__getitem_X__(stay_id)
+        cannulation_idx = (X.index > cannulation_time).tolist().index(True)
+        X = X.iloc[:cannulation_idx]
+
+        X_ffill = (
+            X.applymap(lambda item: float("nan") if item == -1 else item)
+            .fillna(method="ffill")
+            .fillna(-1)
+        )
+
+        y = torch.tensor(self.labels.loc[stay_id].astype(int).to_numpy())
+        return torch.tensor(X_ffill.transpose().to_numpy()[:, -1]), y
+
+
 def load_to_mem_unsupervised(stay_ids: list):
     all_X = torch.tensor([])
 
@@ -262,13 +302,16 @@ def load_to_mem_unsupervised(stay_ids: list):
 
 
 if __name__ == "__main__":
-    studygroups = pd.read_parquet("cache/studygroups.parquet")
-    studygroups = studygroups[
-        (studygroups["Cardiac Vascular Intensive Care Unit (CVICU)"] == 1)
-        & (studygroups["los"] > 0.6)
-    ]
-    sids = studygroups["stay_id"].to_list()
+    # studygroups = pd.read_parquet("cache/studygroups.parquet")
+    # studygroups = studygroups[
+    #     (studygroups["Cardiac Vascular Intensive Care Unit (CVICU)"] == 1)
+    #     & (studygroups["los"] > 0.6)
+    # ]
+    # sids = studygroups["stay_id"].to_list()
 
-    X = load_to_mem_unsupervised(sids)
+    # X = load_to_mem_unsupervised(sids)
 
-    print(X.shape)
+    # print(X.shape)
+
+    ds = LabeledEcmoDataset()
+    print(ds[0])
