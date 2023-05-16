@@ -130,8 +130,7 @@ if __name__ == "__main__":
             ]
         ],
         columns=["first_careunit"],
-        prefix="",
-        prefix_sep="",
+        prefix="unit",
     )
 
     # Get ECMO label

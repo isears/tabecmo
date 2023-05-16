@@ -28,6 +28,8 @@ if __name__ == "__main__":
         chartevents_dd["itemid"].isin(ecmo_flow_ids + ecmo_circuit_config_ids)
     ].compute(scheduler="processes")
 
+    ecmo_events["charttime"] = pd.to_datetime(ecmo_events["charttime"])
+
     ecmo_events.to_parquet("cache/ecmoevents.parquet", index=False)
 
     print("done")
