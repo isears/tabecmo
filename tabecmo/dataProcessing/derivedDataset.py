@@ -64,7 +64,7 @@ class DerivedDataset(torch.utils.data.Dataset):
         # TODO:
         # self.max_len = self.examples["cutidx"].max() + 1
         # print(f"\tMax length: {self.max_len}")
-        self.max_len = 30 * 24 + 1
+        self.max_len = 50 * 24
 
         self.stats = pd.read_parquet("mimiciv_derived/processed/stats.parquet")
 

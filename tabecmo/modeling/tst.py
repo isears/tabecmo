@@ -22,15 +22,36 @@ from tabecmo.dataProcessing.derivedDataset import DerivedDataset
 
 
 class GenericPlTst(pl.LightningModule):
-    def __init__(self, tst, lr) -> None:
+    def __init__(self, lr=1e-3) -> None:
         super().__init__()
-        self.tst = tst
+
+        self.tst = TSTransformerEncoderClassiregressor(
+            feat_dim=89,
+            max_len=50 * 24,
+            d_model=64,
+            dim_feedforward=128,
+            num_classes=3,
+            num_layers=1,
+            n_heads=8,
+        )
 
         self.loss_fn = torch.nn.BCELoss()
         self.scorers = [
             MultilabelAUROC(num_labels=3).to("cuda"),
             MultilabelAveragePrecision(num_labels=3).to("cuda"),
         ]
+
+        self.scorers = {}
+
+        for tgt_name in [
+            "comp_any_thrombosis",
+            "comp_any_hemorrhage",
+            "comp_any_stroke",
+        ]:
+            self.scorers[tgt_name] = [
+                BinaryAUROC(num_labels=3).to("cuda"),
+                BinaryPrecision(num_labels=3).to("cuda"),
+            ]
 
         self.lr = lr
 
@@ -50,8 +71,9 @@ class GenericPlTst(pl.LightningModule):
 
         loss = self.loss_fn(preds, y)
 
-        for s in self.scorers:
-            s.update(preds, y.int())
+        for idx, (k, v) in enumerate(self.scorers.items()):
+            for s in v:
+                s.update(preds[:, idx], y[:, idx].int())
 
         self.log("val_loss", loss)
 
@@ -59,12 +81,12 @@ class GenericPlTst(pl.LightningModule):
 
     def on_validation_epoch_end(self):
         print("\n\nValidation scores:")
-
-        for s in self.scorers:
-            final_score = s.compute()
-            print(f"\t{s.__class__.__name__}: {final_score}")
-            self.log(f"Validation {s.__class__.__name__}", final_score)
-            s.reset()
+        for k, v in self.scorers.items():
+            for s in v:
+                final_score = s.compute()
+                print(f"\t{s.__class__.__name__} {k}: {final_score}")
+                self.log(f"Validation {s.__class__.__name__} {k}", final_score)
+                s.reset()
 
         print()
 
@@ -79,12 +101,11 @@ class GenericPlTst(pl.LightningModule):
         return loss
 
     def on_test_epoch_end(self):
-        test_competition_score = 0.0
         for s in self.scorers:
             final_score = s.compute()
             self.log(f"Test {s.__class__.__name__}", final_score)
 
-        return test_competition_score
+        return final_score
 
     def forward(self, X, pad_masks):
         logits = self.tst(X, pad_masks)
@@ -116,7 +137,7 @@ if __name__ == "__main__":
         & (studygroups["ECMO"] == 0)
     ]
 
-    studygroups = studygroups[(studygroups["los"] < 30) & (studygroups["los"] > 1)]
+    studygroups = studygroups[(studygroups["los"] < 50) & (studygroups["los"] > 1)]
 
     train_sids, valid_sids = train_test_split(
         studygroups["stay_id"].to_list(), test_size=0.1, random_state=42
@@ -125,24 +146,10 @@ if __name__ == "__main__":
     train_dl = build_dl(train_sids)
     valid_dl = build_dl(valid_sids)
 
-    tst = TSTransformerEncoderClassiregressor(
-        feat_dim=89,
-        max_len=train_dl.dataset.max_len,
-        d_model=64,
-        dim_feedforward=128,
-        num_classes=3,
-        num_layers=1,
-        n_heads=8,
-    )
-
     # TODO: actually get input dim from dataset
-    pl_tst = GenericPlTst(
-        tst=tst,
-        lr=1e-3,
-    )
+    pl_tst = GenericPlTst()
 
     trainer = pl.Trainer(
-        # limit_train_batches=100,
         max_epochs=500,
         logger=False,
         callbacks=[
@@ -154,9 +161,10 @@ if __name__ == "__main__":
                 check_finite=False,
             ),
         ],
-        default_root_dir="cache/encoder_models",
+        default_root_dir="cache/tst_models",
         accelerator="gpu",
     )
+
     trainer.fit(
         model=pl_tst,
         train_dataloaders=train_dl,
