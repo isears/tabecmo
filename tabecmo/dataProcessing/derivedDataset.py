@@ -64,11 +64,114 @@ class DerivedDataset(torch.utils.data.Dataset):
         # TODO:
         # self.max_len = self.examples["cutidx"].max() + 1
         # print(f"\tMax length: {self.max_len}")
-        self.max_len = 14 * 24 + 1
+        self.max_len = 30 * 24 + 1
 
         self.stats = pd.read_parquet("mimiciv_derived/processed/stats.parquet")
 
+        self.labels = pd.read_parquet("cache/studygroups.parquet")
+        self.labels = self.labels.set_index("stay_id")
+        self.labels = self.labels[
+            [c for c in self.labels.columns if c.startswith("comp_")]
+        ]
+
+        # For now, use the broad categories
+        self.labels = self.labels.reindex(
+            columns=["comp_any_thrombosis", "comp_any_hemorrhage", "comp_any_stroke"]
+        )
+
     def _populate_features(self) -> list:
+        # TODO: hardcode for now but need to think of a way to generate this more efficiently
+        return [
+            "AbsoluteBasophilCount",
+            "AbsoluteEosinophilCount",
+            "AbsoluteLymphocyteCount",
+            "AbsoluteMonocyteCount",
+            "AbsoluteNeutrophilCount",
+            "AtypicalLymphocytes",
+            "Bands",
+            "Basophils",
+            "Blasts",
+            "EosinophilCount",
+            "Eosinophils",
+            "GranulocyteCount",
+            "HypersegmentedNeutrophils",
+            "ImmatureGranulocytes",
+            "Lymphocytes",
+            "LymphocytesPercent",
+            "Metamyelocytes",
+            "MonocyteCount",
+            "Monocytes",
+            "Myelocytes",
+            "Neutrophils",
+            "NucleatedRedCells",
+            "OtherCells",
+            "PlateletCount",
+            "Promyelocytes",
+            "RedBloodCells",
+            "ReticulocyteCountAbsolute",
+            "ReticulocyteCountAutomated",
+            "WBCCount",
+            "WhiteBloodCells",
+            "aado2",
+            "aado2_calc",
+            "albumin",
+            "alp",
+            "alt",
+            "amylase",
+            "aniongap",
+            "ast",
+            "baseexcess",
+            "bicarbonate",
+            "bilirubin_direct",
+            "bilirubin_indirect",
+            "bilirubin_total",
+            "bun",
+            "calcium",
+            "carboxyhemoglobin",
+            "chloride",
+            "ck_cpk",
+            "ck_mb",
+            "creatinine",
+            "crp",
+            "d_dimer",
+            "diastolic_bp",
+            "dobutamine",
+            "epinephrine",
+            "fibrinogen",
+            "fio2",
+            "ggt",
+            "globulin",
+            "glucose",
+            "heart_rate",
+            "hematocrit",
+            "hemoglobin",
+            "inr",
+            "invasive_line",
+            "lactate",
+            "ld_ldh",
+            "methemoglobin",
+            "milrinone",
+            "norepinephrine",
+            "pao2fio2ratio",
+            "pco2",
+            "ph",
+            "phenylephrine",
+            "po2",
+            "potassium",
+            "pt",
+            "ptt",
+            "resp_rate",
+            "so2",
+            "sodium",
+            "spo2",
+            "systolic_bp",
+            "temperature",
+            "thrombin",
+            "total_protein",
+            "totalco2",
+            "vasopressin",
+            "ventilation",
+        ]
         feature_names = list()
 
         for table_name in self.used_tables:
@@ -109,7 +212,7 @@ class DerivedDataset(torch.utils.data.Dataset):
         pad_mask = torch.stack([pad_mask for _, _, pad_mask, _ in batch], dim=0)
         IDs = torch.tensor([stay_id for _, _, _, stay_id in batch])
 
-        return X.float(), y.float(), pad_mask.to(self.pm_type), IDs
+        return X.float(), y.float(), pad_mask.to(self.pm_type)
 
     def maxlen_padmask_collate_skorch(self, batch):
         """
@@ -176,10 +279,7 @@ class DerivedDataset(torch.utils.data.Dataset):
         return combined
 
     def __getitem_Y__(self, stay_id: int) -> float:
-        if os.path.exists(f"mimiciv_derived/processed/{stay_id}.sepsis3.parquet"):
-            return 1.0
-        else:
-            return 0.0
+        raise NotImplementedError()
 
     def __len__(self):
         return len(self.stay_ids)
@@ -188,35 +288,21 @@ class DerivedDataset(torch.utils.data.Dataset):
         stay_id = self.stay_ids[index]
 
         X = self.__getitem_X__(stay_id)
-        Y = self.__getitem_Y__(stay_id)
+        # Y = self.__getitem_Y__(stay_id)
 
-        if Y == 1.0:  # Do just-before-sepsis cut
-            sepsis_df = pd.read_parquet(
-                f"mimiciv_derived/processed/{stay_id}.sepsis3.parquet"
+        # TODO: this should be coupled with inclusion criteria
+        if len(X.index) <= 24:
+            print(
+                f"[-] Warning: stay id {stay_id} doesn't have sufficient data to do random cut"
             )
-            t_sepsis = sepsis_df[sepsis_df["sepsis3"] == 1].index[0]
-            t_cut = t_sepsis - datetime.timedelta(hours=12)
+        else:
+            t_cut = random.choice(X.index[24:])
+            daterange = pd.date_range(X.index[0], t_cut, freq="H")
+            X = X.loc[daterange]
 
-            if t_cut > X.index[0]:
-                daterange = pd.date_range(X.index[0], t_cut, freq="H")
-                X = X.loc[daterange]
-            else:
-                print(
-                    f"[-] Warning: stay id {stay_id} doesn't have sufficient data to do pre-sepsis cut"
-                )
+        y = self.labels.loc[stay_id].astype(int).to_numpy()
 
-        else:  # Do random cut
-            # TODO: this should be coupled with inclusion criteria
-            if len(X.index) <= 24:
-                print(
-                    f"[-] Warning: stay id {stay_id} doesn't have sufficient data to do random cut"
-                )
-            else:
-                t_cut = random.choice(X.index[24:])
-                daterange = pd.date_range(X.index[0], t_cut, freq="H")
-                X = X.loc[daterange]
-
-        return X, Y, stay_id
+        return X, y, stay_id
 
 
 class UnlabeledDataset(DerivedDataset):
@@ -243,21 +329,59 @@ class UnlabeledDataset(DerivedDataset):
         return torch.tensor(X_ffill.transpose().to_numpy()[:, -1])
 
 
+class UnlabeledTimeseriesDataset(DerivedDataset):
+    """
+    Do random cut, but deliver entire timeseries up to cut rather than just most recent data
+    """
+
+    def maxlen_padmask_collate(self, batch):
+        """
+        Pad and return third value (the pad mask)
+        Returns X, y, padmask, stay_ids
+        """
+        for idx, X in enumerate(batch):
+            actual_len = X.shape[1]
+
+            assert (
+                actual_len <= self.max_len
+            ), f"Actual: {actual_len}, Max: {self.max_len}"
+
+            pad_mask = torch.ones(actual_len)
+            X_mod = pad(X, (0, self.max_len - actual_len), mode="constant", value=0.0)
+
+            pad_mask = pad(
+                pad_mask, (0, self.max_len - actual_len), mode="constant", value=0.0
+            )
+
+            batch[idx] = X_mod.T
+
+        X = torch.stack(batch, dim=0)
+
+        return X.float()
+
+    def __getitem__(self, index: int):
+        stay_id = self.stay_ids[index]
+
+        X = self.__getitem_X__(stay_id)
+
+        if len(X.index) < 12:
+            print(
+                f"[-] Warning: stay id {stay_id} doesn't have sufficient data to do random cut"
+            )
+        else:
+            t_cut = random.choice(X.index[12:])
+            daterange = pd.date_range(X.index[0], t_cut, freq="H")
+            X = X.loc[daterange]
+
+        return torch.tensor(X.transpose().to_numpy())
+
+
 class LabeledEcmoDataset(DerivedDataset):
     def __init__(self):
         self.ecmoevents = pd.read_parquet("cache/ecmoevents.parquet")
 
-        self.labels = pd.read_parquet("cache/studygroups.parquet")
-        ecmo_stayids = self.labels[self.labels["ECMO"] == 1]["stay_id"].to_list()
-        self.labels = self.labels.set_index("stay_id")
-        self.labels = self.labels[
-            [c for c in self.labels.columns if c.startswith("comp_")]
-        ]
-
-        # For now, use the broad categories
-        self.labels = self.labels.reindex(
-            columns=["comp_any_thrombosis", "comp_any_hemorrhage", "comp_any_stroke"]
-        )
+        studygroup = pd.read_parquet("cache/studygroups.parquet")
+        ecmo_stayids = studygroup[studygroup["ECMO"] == 1]["stay_id"].to_list()
 
         super().__init__(ecmo_stayids)
 
