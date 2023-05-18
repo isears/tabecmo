@@ -8,7 +8,7 @@ from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import KFold, StratifiedKFold, train_test_split
 
-from tabecmo.modeling.tst import GenericPlTst, build_dl
+from tabecmo.modeling.lookaheadTst import GenericPlTst, build_dl
 
 
 def do_cv(ecmo_stayids: list, n_splits=5, base_model=None):

@@ -52,27 +52,29 @@ class TimeseriesAutoencoder(pl.LightningModule):
         self.d_model = d_model
 
     def forward(self, X: torch.Tensor, padding_masks: torch.Tensor):
-        # Expect X to be [seq_len, batch_size, feat_dim]
-        # padding_masks to be [batch_size, feat_dim]
+        inp = X.permute(1, 0, 2)
+        inp = self.linear(inp) * np.sqrt(self.d_model)
 
         # NOTE: logic for padding masks is reversed to comply with definition in MultiHeadAttention, TransformerEncoderLayer
+
         encoded = self.encoder(
-            X, src_key_padding_mask=~padding_masks
+            inp, src_key_padding_mask=~padding_masks
         )  # (seq_length, batch_size, d_model)
         # the output transformer encoder/decoder embeddings don't include non-linearity
 
         # Output
-        encoded = encoded * padding_masks.unsqueeze(-1)  # zero-out padding embeddings
-        encoded = encoded.reshape(
-            encoded.shape[0], -1
-        )  # (batch_size, seq_length * d_model)
-        encoded = self.linear_encoding(encoded)  # (batch_size, dim_encoded)
+        encoded = torch.nn.functional.gelu(encoded)
+        # encoded = encoded.permute(1, 0, 2)
+        # encoded = encoded * padding_masks.unsqueeze(-1)  # zero-out padding embeddings
+        # encoded = encoded.reshape(
+        #     encoded.shape[0], -1
+        # )  # (batch_size, seq_length * d_model)
 
-        decoded = self.linear_decoding(encoded)  # (batch_size, seq_len * d_model)
-        decoded = decoded.reshape(self.seq_len, encoded.shape[0], self.d_model)  # (seq_len, batch_size, d_model)
-        decoded = 
+        # decoded = encoded.reshape(
+        #     self.seq_len, encoded.shape[0], self.d_model
+        # )  # (seq_len, batch_size, d_model)
 
-        return output
+        return decoded
 
     def training_step(self, batch, batch_idx):
         x = batch
@@ -90,8 +92,8 @@ class TimeseriesAutoencoder(pl.LightningModule):
         self.train_mse.reset()
 
     def validation_step(self, batch, batch_idx):
-        x = batch
-        encoded = self.encoder(x)
+        x, pm = batch
+        encoded = self.forward(x, pm)
         decoded = self.decoder(encoded)
         reconstructed = self.linear(decoded)
         loss = torch.nn.functional.mse_loss(reconstructed, x)
@@ -118,6 +120,7 @@ def build_dl(stay_ids: list):
         num_workers=config.cores_available,
         batch_size=32,
         pin_memory=(config.gpus_available > 0),
+        collate_fn=ds.maxlen_padmask_collate,
     )
 
     return dl
@@ -128,6 +131,7 @@ if __name__ == "__main__":
     studygroups = studygroups[
         (studygroups["unit_Cardiac Vascular Intensive Care Unit (CVICU)"] == 1)
         & (studygroups["ECMO"] == 0)
+        & (studygroups["los"] < 50)
     ]
 
     train_sids, valid_sids = train_test_split(
@@ -138,7 +142,16 @@ if __name__ == "__main__":
     valid_dl = build_dl(valid_sids)
 
     # TODO: actually get input dim from dataset
-    autoencoder = TimeseriesAutoencoder()
+    autoencoder = TimeseriesAutoencoder(
+        feat_dim=89,
+        d_model=32,
+        nhead=4,
+        dim_feedforward=64,
+        dim_encoded=16,
+        seq_len=train_dl.dataset.max_len,
+        lr=1e-4,
+        num_layers=2,
+    )
 
     trainer = pl.Trainer(
         # limit_train_batches=100,

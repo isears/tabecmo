@@ -1,11 +1,14 @@
+import numpy as np
 import pandas as pd
 import pytorch_lightning as pl
 import torch
+import torchmetrics
 from mvtst.models.ts_transformer import (
     TSTransformerEncoder,
     TSTransformerEncoderClassiregressor,
 )
 from pytorch_lightning.callbacks import EarlyStopping
+from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from sklearn.model_selection import train_test_split
 from torchmetrics.classification import (
     BinaryAccuracy,
@@ -19,6 +22,7 @@ from torchmetrics.classification import (
 
 from tabecmo import config
 from tabecmo.dataProcessing.derivedDataset import DerivedDataset
+from tabecmo.dataProcessing.pretrainingDataset import ImputationDataset
 
 
 class GenericPlTst(pl.LightningModule):
@@ -30,28 +34,14 @@ class GenericPlTst(pl.LightningModule):
             max_len=50 * 24,
             d_model=64,
             dim_feedforward=128,
-            num_classes=3,
-            num_layers=1,
+            num_classes=89,
+            num_layers=2,
             n_heads=8,
         )
 
-        self.loss_fn = torch.nn.BCELoss()
-        self.scorers = [
-            MultilabelAUROC(num_labels=3).to("cuda"),
-            MultilabelAveragePrecision(num_labels=3).to("cuda"),
-        ]
-
-        self.scorers = {}
-
-        for tgt_name in [
-            "comp_any_thrombosis",
-            "comp_any_hemorrhage",
-            "comp_any_stroke",
-        ]:
-            self.scorers[tgt_name] = [
-                BinaryAUROC(num_labels=3).to("cuda"),
-                BinaryPrecision(num_labels=3).to("cuda"),
-            ]
+        self.loss_fn = torch.nn.functional.mse_loss
+        self.train_mse = torchmetrics.MeanSquaredError()
+        self.valid_mse = torchmetrics.MeanSquaredError()
 
         self.lr = lr
 
@@ -59,6 +49,8 @@ class GenericPlTst(pl.LightningModule):
         X, y, pad_masks = batch
         preds = self.forward(X, pad_masks)
 
+        # Only get loss at valid data points
+        preds[y == -1] = -1
         loss = self.loss_fn(preds, y)
 
         self.log("train_loss", loss)
@@ -69,24 +61,19 @@ class GenericPlTst(pl.LightningModule):
         X, y, pad_masks = batch
         preds = self.forward(X, pad_masks)
 
+        preds[y == -1] = -1
+
         loss = self.loss_fn(preds, y)
 
-        for idx, (k, v) in enumerate(self.scorers.items()):
-            for s in v:
-                s.update(preds[:, idx], y[:, idx].int())
+        self.valid_mse.update(preds=preds, target=y)
 
         self.log("val_loss", loss)
 
         return loss
 
     def on_validation_epoch_end(self):
-        print("\n\nValidation scores:")
-        for k, v in self.scorers.items():
-            for s in v:
-                final_score = s.compute()
-                print(f"\t{s.__class__.__name__} {k}: {final_score}")
-                self.log(f"Validation {s.__class__.__name__} {k}", final_score)
-                s.reset()
+        print(f"\n\nval_loss: {self.valid_mse.compute()}\n\n")
+        self.valid_mse.reset()
 
         print()
 
@@ -108,8 +95,22 @@ class GenericPlTst(pl.LightningModule):
         return final_score
 
     def forward(self, X, pad_masks):
-        logits = self.tst(X, pad_masks)
-        return torch.sigmoid(logits)
+        return self.tst(X, pad_masks)
+
+    def forward_partial(self, X, pad_masks):
+        inp = X.permute(1, 0, 2)
+        inp = self.tst.project_inp(inp) * np.sqrt(self.tst.d_model)
+        inp = self.tst.pos_enc(inp)
+        output = self.tst.transformer_encoder(inp, src_key_padding_mask=~pad_masks)
+        output = self.tst.act(output)
+        output = output.permute(1, 0, 2)
+
+        output = output * pad_masks.unsqueeze(-1)
+        output = output.reshape(
+            output.shape[0], -1
+        )  # (batch_size, seq_length * d_model)
+
+        return output
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
@@ -117,12 +118,12 @@ class GenericPlTst(pl.LightningModule):
 
 
 def build_dl(stay_ids: list):
-    ds = DerivedDataset(stay_ids)
+    ds = ImputationDataset(stay_ids)
 
     dl = torch.utils.data.DataLoader(
         ds,
         num_workers=config.cores_available,
-        batch_size=32,
+        batch_size=16,
         collate_fn=ds.maxlen_padmask_collate,
         pin_memory=True,
     )
@@ -135,9 +136,9 @@ if __name__ == "__main__":
     studygroups = studygroups[
         (studygroups["unit_Cardiac Vascular Intensive Care Unit (CVICU)"] == 1)
         & (studygroups["ECMO"] == 0)
+        & (studygroups["los"] < 50)
+        & (studygroups["los"] > 2)
     ]
-
-    studygroups = studygroups[(studygroups["los"] < 50) & (studygroups["los"] > 1)]
 
     train_sids, valid_sids = train_test_split(
         studygroups["stay_id"].to_list(), test_size=0.1, random_state=42
@@ -157,11 +158,18 @@ if __name__ == "__main__":
                 monitor="val_loss",
                 mode="min",
                 verbose=True,
-                patience=10,
+                patience=3,
                 check_finite=False,
+            ),
+            ModelCheckpoint(
+                save_top_k=1,
+                monitor="val_loss",
+                mode="min",
+                dirpath="cache/best_tst_models",
             ),
         ],
         default_root_dir="cache/tst_models",
+        enable_checkpointing=True,
         accelerator="gpu",
     )
 

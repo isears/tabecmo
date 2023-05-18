@@ -43,6 +43,26 @@ class DerivedDataset(torch.utils.data.Dataset):
         "ventilation",
     ]
 
+    label_names = [
+        "comp_dvt",
+        "comp_pe",
+        "comp_ox_thrombosis",
+        "comp_retinal_vascular_occlusion",
+        "comp_precerebral_occlusion",
+        "comp_cerebral_occlusion",
+        "comp_unspec_thrombosis",
+        "comp_ic_hemorrhage",
+        "comp_gi_hemorrhage",
+        "comp_csite_hemorrhage",
+        "comp_ssite_hemorrhage",
+        "comp_pulm_hemorrhage",
+        "comp_epistaxis",
+        "comp_unspec_hemorrhage",
+        "comp_subarachnoid_hemorrhage",
+        "comp_other_acute_stroke",
+        "comp_tia",
+    ]
+
     def __init__(
         self,
         stay_ids: list[int],
@@ -75,9 +95,7 @@ class DerivedDataset(torch.utils.data.Dataset):
         ]
 
         # For now, use the broad categories
-        self.labels = self.labels.reindex(
-            columns=["comp_any_thrombosis", "comp_any_hemorrhage", "comp_any_stroke"]
-        )
+        self.labels = self.labels.reindex(columns=self.label_names)
 
     def _populate_features(self) -> list:
         # TODO: hardcode for now but need to think of a way to generate this more efficiently
@@ -188,8 +206,8 @@ class DerivedDataset(torch.utils.data.Dataset):
         Pad and return third value (the pad mask)
         Returns X, y, padmask, stay_ids
         """
-        for idx, (X, y, stay_id) in enumerate(batch):
-            X = torch.tensor(X.transpose().to_numpy())
+        for idx, (X, y) in enumerate(batch):
+            # X = torch.tensor(X.transpose().to_numpy())
             actual_len = X.shape[1]
 
             assert (
@@ -203,14 +221,11 @@ class DerivedDataset(torch.utils.data.Dataset):
                 pad_mask, (0, self.max_len - actual_len), mode="constant", value=0.0
             )
 
-            batch[idx] = (X_mod.T, y, pad_mask, stay_id)
+            batch[idx] = (X_mod.T, y, pad_mask)
 
-        X = torch.stack([X for X, _, _, _ in batch], dim=0)
-        y = torch.stack(
-            [torch.tensor(Y) for _, Y, _, _ in batch], dim=0
-        )  # .unsqueeze(-1)
-        pad_mask = torch.stack([pad_mask for _, _, pad_mask, _ in batch], dim=0)
-        IDs = torch.tensor([stay_id for _, _, _, stay_id in batch])
+        X = torch.stack([X for X, _, _ in batch], dim=0)
+        y = torch.stack([Y for _, Y, _ in batch], dim=0)  # .unsqueeze(-1)
+        pad_mask = torch.stack([pad_mask for _, _, pad_mask in batch], dim=0)
 
         return X.float(), y.float(), pad_mask.to(self.pm_type)
 
@@ -274,6 +289,7 @@ class DerivedDataset(torch.utils.data.Dataset):
 
         # Fill nas w/-1
         # TODO: if no drug data exists, need to fill those nas w/0.0
+        combined[self.meds_tables] = combined[self.meds_tables].fillna(0.0)
         combined = combined.fillna(-1.0)
 
         return combined
@@ -302,7 +318,7 @@ class DerivedDataset(torch.utils.data.Dataset):
 
         y = self.labels.loc[stay_id].astype(int).to_numpy()
 
-        return X, y, stay_id
+        return torch.tensor(X.transpose().to_numpy()), torch.tensor(y)
 
 
 class UnlabeledDataset(DerivedDataset):
@@ -353,11 +369,12 @@ class UnlabeledTimeseriesDataset(DerivedDataset):
                 pad_mask, (0, self.max_len - actual_len), mode="constant", value=0.0
             )
 
-            batch[idx] = X_mod.T
+            batch[idx] = (X_mod.T, pad_mask)
 
-        X = torch.stack(batch, dim=0)
+        X = torch.stack([x for x, _ in batch], dim=0)
+        pad_mask = torch.stack([pad_mask for _, pad_mask in batch], dim=0)
 
-        return X.float()
+        return X.float(), pad_mask.to(self.pm_type)
 
     def __getitem__(self, index: int):
         stay_id = self.stay_ids[index]
@@ -399,6 +416,25 @@ class LabeledEcmoDataset(DerivedDataset):
         cannulation_idx = (X.index > cannulation_time).tolist().index(True)
         X = X.iloc[:cannulation_idx]
 
+        y = torch.tensor(self.labels.loc[stay_id].astype(int).to_numpy())
+        return torch.tensor(X.transpose().to_numpy()), y
+
+
+class LabeledEcmoDatasetTruncated(LabeledEcmoDataset):
+    def __getitem__(self, index: int):
+        stay_id = self.stay_ids[index]
+
+        cannulation_events = self.ecmoevents[
+            (self.ecmoevents["stay_id"] == stay_id)
+            & (self.ecmoevents["itemid"].isin([229268, 229840]))
+        ]
+
+        cannulation_time = cannulation_events["charttime"].min()
+
+        X = self.__getitem_X__(stay_id)
+        cannulation_idx = (X.index > cannulation_time).tolist().index(True)
+        X = X.iloc[:cannulation_idx]
+
         X_ffill = (
             X.applymap(lambda item: float("nan") if item == -1 else item)
             .fillna(method="ffill")
@@ -406,6 +442,7 @@ class LabeledEcmoDataset(DerivedDataset):
         )
 
         y = torch.tensor(self.labels.loc[stay_id].astype(int).to_numpy())
+
         return torch.tensor(X_ffill.transpose().to_numpy()[:, -1]), y
 
 

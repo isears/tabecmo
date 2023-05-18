@@ -27,6 +27,8 @@ class SimpleFeatureAutoencoder(pl.LightningModule):
         self.middle_encoding_dim = middle_encoding_dim
         self.lr = lr
 
+        # TODO: if building individual per-feature encoders, need to use modulelist
+        # https://discuss.pytorch.org/t/when-should-i-use-nn-modulelist-and-when-should-i-use-nn-sequential/5463
         # self.feature_encoders = list()
         # self.feature_decoders = list()
 
@@ -47,15 +49,14 @@ class SimpleFeatureAutoencoder(pl.LightningModule):
         self.valid_mse = torchmetrics.MeanSquaredError()
 
     def encode(self, X: torch.Tensor):
-        encodings = list()
-        for fidx in range(0, self.n_features):
-            encodings.append(self.feature_encoder(X[:, :, fidx]))
-
-        encoded_features_flat = torch.stack(encodings, dim=-1).reshape(
-            X.shape[0], self.n_features * self.feat_encoding_dim
+        encodings = torch.stack(
+            [self.feature_encoder(X[:, :, fidx]) for fidx in range(0, self.n_features)],
+            dim=-1,
         )
 
-        del encodings
+        encoded_features_flat = encodings.reshape(
+            X.shape[0], self.n_features * self.feat_encoding_dim
+        )
 
         return self.middle_encoder(encoded_features_flat)
 
@@ -64,15 +65,19 @@ class SimpleFeatureAutoencoder(pl.LightningModule):
             encoded.shape[0], self.n_features, self.feat_encoding_dim
         )
 
-        decodings = list()
-        for fidx in range(0, self.n_features):
-            decodings.append(self.feature_decoder(middle_decoded[:, fidx, :]))
+        decodings = torch.stack(
+            [
+                self.feature_decoder(middle_decoded[:, fidx, :])
+                for fidx in range(0, self.n_features)
+            ],
+            dim=-1,
+        )
 
-        return torch.stack(decodings, dim=-1)
+        return decodings
 
-    def forward(self, X: torch.Tensor):
+    def forward(self, X: torch.Tensor, padding_mask: torch.Tensor):
         encoded = self.encode(X)
-        decoded = self.decode(X)
+        decoded = self.decode(encoded)
 
         return decoded
 
@@ -91,8 +96,8 @@ class SimpleFeatureAutoencoder(pl.LightningModule):
         self.train_mse.reset()
 
     def validation_step(self, batch, batch_idx):
-        x = batch
-        x_hat = self.forward(x)
+        x, pm = batch
+        x_hat = self.forward(x, pm)
         loss = torch.nn.functional.mse_loss(x_hat, x)
         self.log("valid_los", loss)
 
