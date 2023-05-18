@@ -225,6 +225,10 @@ class DerivedDataset(torch.utils.data.Dataset):
 
         X = torch.stack([X for X, _, _ in batch], dim=0)
         y = torch.stack([Y for _, Y, _ in batch], dim=0)  # .unsqueeze(-1)
+
+        if y.ndim == 1:
+            y = y.unsqueeze(-1)
+
         pad_mask = torch.stack([pad_mask for _, _, pad_mask in batch], dim=0)
 
         return X.float(), y.float(), pad_mask.to(self.pm_type)
@@ -295,7 +299,7 @@ class DerivedDataset(torch.utils.data.Dataset):
         return combined
 
     def __getitem_Y__(self, stay_id: int) -> float:
-        raise NotImplementedError()
+        return self.labels.loc[stay_id].astype(int)
 
     def __len__(self):
         return len(self.stay_ids)
@@ -316,9 +320,9 @@ class DerivedDataset(torch.utils.data.Dataset):
             daterange = pd.date_range(X.index[0], t_cut, freq="H")
             X = X.loc[daterange]
 
-        y = self.labels.loc[stay_id].astype(int).to_numpy()
+        y = self.__getitem_Y__(stay_id)
 
-        return torch.tensor(X.transpose().to_numpy()), torch.tensor(y)
+        return torch.tensor(X.transpose().to_numpy()), torch.tensor(y.to_numpy())
 
 
 class UnlabeledDataset(DerivedDataset):
@@ -402,19 +406,22 @@ class LabeledEcmoDataset(DerivedDataset):
 
         super().__init__(ecmo_stayids)
 
-    def __getitem__(self, index: int):
-        stay_id = self.stay_ids[index]
-
+    def __getitem_X__(self, stay_id: int):
+        X = super().__getitem_X__(stay_id)
         cannulation_events = self.ecmoevents[
             (self.ecmoevents["stay_id"] == stay_id)
             & (self.ecmoevents["itemid"].isin([229268, 229840]))
         ]
 
         cannulation_time = cannulation_events["charttime"].min()
-
-        X = self.__getitem_X__(stay_id)
         cannulation_idx = (X.index > cannulation_time).tolist().index(True)
         X = X.iloc[:cannulation_idx]
+        return X
+
+    def __getitem__(self, index: int):
+        stay_id = self.stay_ids[index]
+
+        X = self.__getitem_X__(stay_id)
 
         y = torch.tensor(self.labels.loc[stay_id].astype(int).to_numpy())
         return torch.tensor(X.transpose().to_numpy()), y
@@ -424,16 +431,7 @@ class LabeledEcmoDatasetTruncated(LabeledEcmoDataset):
     def __getitem__(self, index: int):
         stay_id = self.stay_ids[index]
 
-        cannulation_events = self.ecmoevents[
-            (self.ecmoevents["stay_id"] == stay_id)
-            & (self.ecmoevents["itemid"].isin([229268, 229840]))
-        ]
-
-        cannulation_time = cannulation_events["charttime"].min()
-
         X = self.__getitem_X__(stay_id)
-        cannulation_idx = (X.index > cannulation_time).tolist().index(True)
-        X = X.iloc[:cannulation_idx]
 
         X_ffill = (
             X.applymap(lambda item: float("nan") if item == -1 else item)
@@ -444,6 +442,30 @@ class LabeledEcmoDatasetTruncated(LabeledEcmoDataset):
         y = torch.tensor(self.labels.loc[stay_id].astype(int).to_numpy())
 
         return torch.tensor(X_ffill.transpose().to_numpy()[:, -1]), y
+
+
+class IhmLabelingDataset(DerivedDataset):
+    def __init__(self, stay_ids: list[int], shuffle: bool = True, pm_type=torch.bool):
+        super().__init__(stay_ids, shuffle, pm_type)
+
+        self.labels = pd.read_parquet("mimiciv_derived/icustay_detail.parquet")
+        self.labels = self.labels.set_index("stay_id")["hospital_expire_flag"].astype(
+            int
+        )
+
+    def __getitem_Y__(self, stay_id: int):
+        return self.labels.loc[stay_id]
+
+    def __getitem__(self, index: int):
+        stay_id = self.stay_ids[index]
+
+        X_complete = self.__getitem_X__(stay_id)
+        assert len(X_complete) > 48
+
+        X = X_complete[:-24]
+        y = self.__getitem_Y__(stay_id)
+
+        return torch.tensor(X.transpose().to_numpy()), torch.tensor(y)
 
 
 def load_to_mem_unsupervised(stay_ids: list):
@@ -465,16 +487,12 @@ def load_to_mem_unsupervised(stay_ids: list):
 
 
 if __name__ == "__main__":
-    # studygroups = pd.read_parquet("cache/studygroups.parquet")
-    # studygroups = studygroups[
-    #     (studygroups["Cardiac Vascular Intensive Care Unit (CVICU)"] == 1)
-    #     & (studygroups["los"] > 0.6)
-    # ]
-    # sids = studygroups["stay_id"].to_list()
+    studygroups = pd.read_parquet("cache/studygroups.parquet")
+    studygroups = studygroups[
+        (studygroups["unit_Cardiac Vascular Intensive Care Unit (CVICU)"] == 1)
+        & (studygroups["los"] > 2)
+    ]
+    sids = studygroups["stay_id"].to_list()
 
-    # X = load_to_mem_unsupervised(sids)
-
-    # print(X.shape)
-
-    ds = LabeledEcmoDataset()
+    ds = IhmLabelingDataset(sids)
     print(ds[0])
