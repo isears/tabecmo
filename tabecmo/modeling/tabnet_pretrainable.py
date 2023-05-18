@@ -80,25 +80,21 @@ def do_cv(X, y, n_splits=5, base_model=None):
 
 
 if __name__ == "__main__":
-    X_ecmo = torch.load("cache/X_ecmo.pt").numpy()
-    y_ecmo = torch.load("cache/y_ecmo.pt").numpy()
+    X_ecmo = torch.load("cache/ihmtensors/X_ecmo.pt").numpy()
+    y_ecmo = torch.load("cache/ihmtensors/y_ecmo.pt").numpy()
 
     X_ecmo_train, X_ecmo_test, y_ecmo_train, y_ecmo_test = train_test_split(
         X_ecmo, y_ecmo, test_size=0.2, random_state=42
     )
 
     # TODO: debug only
-    sys.argv.append("cache/X_unlabeled_Cardiac.Vascular.Intensive.Care.Unit.pt")
+    # sys.argv.append("cache/X_unlabeled_Cardiac.Vascular.Intensive.Care.Unit.pt")
     if len(sys.argv) > 1:
         print(f"Training unsupervised on {sys.argv[1]}")
         base_model = do_pretraining(sys.argv[1])
 
-        for label_idx, label in enumerate(["thrombosis", "hemorrhage", "stroke"]):
-            print(f"Running CV for target {label}")
-            do_cv(X_ecmo, y_ecmo[:, label_idx], base_model=base_model)
+        do_cv(X_ecmo, y_ecmo, base_model=base_model)
 
     else:
         print(f"Training without unsupervised pretraining")
-        for label_idx, label in enumerate(["thrombosis", "hemorrhage", "stroke"]):
-            print(f"Running CV for target {label}")
-            do_cv(X_ecmo, y_ecmo[:, label_idx])
+        do_cv(X_ecmo, y_ecmo)

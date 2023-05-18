@@ -473,7 +473,6 @@ class IhmLabelingDatasetTruncated(IhmLabelingDataset):
         stay_id = self.stay_ids[index]
 
         X_complete = self.__getitem_X__(stay_id)
-        assert len(X_complete) > 48
         X = X_complete.iloc[:-24]
         X_ffill = (
             X.applymap(lambda item: float("nan") if item == -1 else item)
