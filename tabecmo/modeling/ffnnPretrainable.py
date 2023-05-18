@@ -136,7 +136,12 @@ def do_cv(X, y, n_splits=5, base_model=None):
         else:
             clf = SimpleFFNN()
 
-        trainer = pl.Trainer(max_epochs=5, logger=False, enable_progress_bar=False)
+        trainer = pl.Trainer(
+            max_epochs=5,
+            logger=False,
+            enable_progress_bar=False,
+            default_root_dir="cache/ffnn_models",
+        )
         trainer.fit(
             clf,
             train_dataloaders=torch.utils.data.TensorDataset(
@@ -164,8 +169,6 @@ if __name__ == "__main__":
         X_ecmo, y_ecmo, test_size=0.2, random_state=42
     )
 
-    # TODO: debug only
-    # sys.argv.append("cache/ihmtensors/X_Cardiac.Vascular.Intensive.Care.Unit.pt")
     if len(sys.argv) > 1:
         print(f"Training unsupervised on {sys.argv[1]}")
         x_path = sys.argv[1]
