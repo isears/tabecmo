@@ -165,10 +165,10 @@ if __name__ == "__main__":
                 save_top_k=1,
                 monitor="val_loss",
                 mode="min",
-                dirpath="cache/best_tst_models",
+                dirpath="cache/best_imputer_models",
             ),
         ],
-        default_root_dir="cache/tst_models",
+        default_root_dir="cache/imputer_models",
         enable_checkpointing=True,
         accelerator="gpu",
     )

@@ -1,11 +1,12 @@
 import numpy as np
+import pandas as pd
 import torch
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import KFold, StratifiedKFold, train_test_split
 
 from tabecmo import config
-from tabecmo.dataProcessing.derivedDataset import LabeledEcmoDatasetTruncated
+from tabecmo.dataProcessing.derivedDataset import IhmLabelingDatasetTruncated
 
 
 def do_cv(X, y, n_splits=5):
@@ -33,7 +34,15 @@ def do_cv(X, y, n_splits=5):
 
 
 if __name__ == "__main__":
-    ds = LabeledEcmoDatasetTruncated()
+    # Load stay ids
+    studygroups = pd.read_parquet("cache/studygroups.parquet")
+    ecmo_stay_ids = studygroups[
+        (studygroups["ECMO"] == 1)
+        & (studygroups["los"] > 2)
+        & (studygroups["los"] < 50)
+    ]["stay_id"].to_list()
+
+    ds = IhmLabelingDatasetTruncated(ecmo_stay_ids)
     dl = torch.utils.data.DataLoader(
         ds,
         num_workers=config.cores_available,
@@ -48,10 +57,4 @@ if __name__ == "__main__":
 
     n_folds = 5
 
-    for label_idx, label in enumerate(ds.label_names):
-        if y[:, label_idx].sum() < n_folds:  # Need at least one + example / fold
-            print(f"[-] Skipping label {label} b/c too few positive examples")
-            continue
-
-        print(f"=========== Running CV for target {label}")
-        do_cv(X, y[:, label_idx], n_splits=n_folds)
+    do_cv(X, y, n_splits=n_folds)

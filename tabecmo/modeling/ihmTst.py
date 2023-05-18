@@ -96,13 +96,13 @@ class GenericPlTst(pl.LightningModule):
         return optimizer
 
 
-def build_dl(stay_ids: list):
+def build_dl(stay_ids: list, batch_size=16):
     ds = IhmLabelingDataset(stay_ids)
 
     dl = torch.utils.data.DataLoader(
         ds,
         num_workers=config.cores_available,
-        batch_size=16,
+        batch_size=batch_size,
         collate_fn=ds.maxlen_padmask_collate,
         pin_memory=True,
     )
