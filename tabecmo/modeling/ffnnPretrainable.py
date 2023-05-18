@@ -1,34 +1,20 @@
 import sys
 
 import numpy as np
-import pandas as pd
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchmetrics
-from mvtst.models.ts_transformer import (
-    TSTransformerEncoder,
-    TSTransformerEncoderClassiregressor,
-)
 from pytorch_lightning.callbacks import EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from sklearn.metrics import roc_auc_score
-from sklearn.model_selection import KFold, StratifiedKFold, train_test_split
+from sklearn.model_selection import StratifiedKFold, train_test_split
 from torchmetrics.classification import (
     BinaryAccuracy,
     BinaryAUROC,
     BinaryF1Score,
     BinaryPrecision,
-    MulticlassAUROC,
-    MulticlassAveragePrecision,
-    MultilabelAUROC,
-    MultilabelAveragePrecision,
 )
-
-from tabecmo import config
-from tabecmo.dataProcessing.derivedDataset import DerivedDataset, IhmLabelingDataset
-from tabecmo.dataProcessing.pretrainingDataset import ImputationDataset
 
 
 class SimpleFFNN(pl.LightningModule):
@@ -44,6 +30,7 @@ class SimpleFFNN(pl.LightningModule):
             BinaryAUROC().to("cuda"),
             BinaryPrecision().to("cuda"),
             BinaryF1Score().to("cuda"),
+            BinaryAccuracy().to("cuda"),
         ]
 
         self.lr = lr
