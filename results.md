@@ -1,2 +1,6 @@
-- Train ECMO / Test ECMO: 0.8756613756613756 (0.0717121550712376)
-- Pre-train autoencoder / Test ECMO: 0.9058862433862434 (0.05927549616936264)
+- No unsupervised pretraining: 0.8616071428571428
+- Pre-train CVICU: 0.90625
+- Pre-train CCU: 0.90625
+- Pre-train MICU:
+- Pre-train MSICU:
+- Pre-train SICU:

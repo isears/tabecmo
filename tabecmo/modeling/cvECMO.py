@@ -12,4 +12,4 @@ if __name__ == "__main__":
 
     autoencoder = EmrAutoencoder()
     clf = EncoderClassifier(autoencoder)
-    score = do_cv(X_ecmo, y_ecmo, clf)
+    score = do_loo_cv(X_ecmo, y_ecmo, clf)

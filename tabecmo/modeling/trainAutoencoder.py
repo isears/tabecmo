@@ -7,23 +7,18 @@ import torch.nn as nn
 import torch.nn.functional as F
 from pytorch_lightning.callbacks import EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
-from sklearn.metrics import roc_auc_score
-from sklearn.model_selection import StratifiedKFold, train_test_split
+from sklearn.model_selection import train_test_split
 
-from tabecmo.modeling.simpleFFNN import EmrAutoencoder, SimpleFFNN
+from tabecmo.modeling.simpleFFNN import EmrAutoencoder
 
 if __name__ == "__main__":
     pl.seed_everything(42)
-    # x_path = sys.argv[1]
-    x_path = "cache/ihmtensors/X_Cardiac.Vascular.Intensive.Care.Unit.pt"
+    x_path = sys.argv[1]
     X_pretraining = torch.load(x_path).float()
-    y_pretraining = torch.load(x_path.replace("X", "y")).float()
 
     clf = EmrAutoencoder()
 
-    X_train, X_valid, y_train, y_valid = train_test_split(
-        X_pretraining, y_pretraining, test_size=0.1, random_state=42
-    )
+    X_train, X_valid = train_test_split(X_pretraining, test_size=0.1, random_state=42)
 
     checkpointer = ModelCheckpoint(
         save_top_k=1,
@@ -33,7 +28,7 @@ if __name__ == "__main__":
     )
 
     trainer = pl.Trainer(
-        max_epochs=5,
+        max_epochs=100,
         enable_progress_bar=False,
         callbacks=[
             EarlyStopping(
