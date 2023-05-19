@@ -14,17 +14,17 @@ from torchmetrics.classification import (
 
 
 class EmrAutoencoder(pl.LightningModule):
-    def __init__(self, n_features=89, encoding_dim=32, lr=1e-3) -> None:
+    def __init__(self, n_features=89, encoding_dim=16, lr=1e-3) -> None:
         super().__init__()
         self.encoding_dim = encoding_dim
 
         self.encoder = nn.Sequential(
-            nn.Linear(n_features, 64),
+            nn.Linear(n_features, 32),
             nn.ReLU(),
-            nn.Linear(64, encoding_dim),
+            nn.Linear(32, encoding_dim),
         )
         self.decoder = nn.Sequential(
-            nn.Linear(encoding_dim, 64), nn.ReLU(), nn.Linear(64, n_features)
+            nn.Linear(encoding_dim, 32), nn.ReLU(), nn.Linear(32, n_features)
         )
         self.loss_fn = F.mse_loss
 
@@ -55,7 +55,8 @@ class EmrAutoencoder(pl.LightningModule):
         preds[X == -1] = -1
         loss = self.loss_fn(preds, X)
 
-        self.log("val_loss", loss)
+        # Pl doesn't do a great job of showing small losses
+        self.log("val_loss", loss * 1e3)
 
         return loss
 
@@ -78,7 +79,7 @@ class EncoderClassifier(pl.LightningModule):
 
     def forward(self, x):
         z = self.encoder(x)
-        y_hat = self.classification_head(F.relu(z))
+        y_hat = self.classification_head(z)
         return torch.sigmoid(y_hat)
 
     def training_step(self, batch, batch_idx):

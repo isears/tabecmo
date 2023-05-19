@@ -395,7 +395,12 @@ class LabeledEcmoDataset(DerivedDataset):
             & (self.ecmoevents["itemid"].isin([229268, 229840]))
         ]
 
-        cannulation_time = cannulation_events["charttime"].min()
+        # Sometimes there are cannulation events after the end of the ICU stay
+        # Must drop that
+        cannulation_events = cannulation_events[
+            cannulation_events["charttime"] < X.index[-1]
+        ]
+        cannulation_time = cannulation_events["charttime"].max()
         cannulation_idx = (X.index > cannulation_time).tolist().index(True)
         X = X.iloc[:cannulation_idx]
         return X
@@ -470,7 +475,7 @@ class IhmLabelingDatasetTruncated(IhmLabelingDataset):
         stay_id = self.stay_ids[index]
 
         X_complete = self.__getitem_X__(stay_id)
-        X = X_complete.iloc[:-24]
+        X = X_complete.iloc[:-36]
         X_ffill = (
             X.applymap(lambda item: float("nan") if item == -1 else item)
             .fillna(method="ffill")
