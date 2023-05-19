@@ -43,25 +43,7 @@ class DerivedDataset(torch.utils.data.Dataset):
         "ventilation",
     ]
 
-    label_names = [
-        "comp_dvt",
-        "comp_pe",
-        "comp_ox_thrombosis",
-        "comp_retinal_vascular_occlusion",
-        "comp_precerebral_occlusion",
-        "comp_cerebral_occlusion",
-        "comp_unspec_thrombosis",
-        "comp_ic_hemorrhage",
-        "comp_gi_hemorrhage",
-        "comp_csite_hemorrhage",
-        "comp_ssite_hemorrhage",
-        "comp_pulm_hemorrhage",
-        "comp_epistaxis",
-        "comp_unspec_hemorrhage",
-        "comp_subarachnoid_hemorrhage",
-        "comp_other_acute_stroke",
-        "comp_tia",
-    ]
+    label_names = ["comp_any_thrombosis", "comp_any_hemorrhage", "comp_any_stroke"]
 
     def __init__(
         self,
@@ -91,7 +73,7 @@ class DerivedDataset(torch.utils.data.Dataset):
         self.labels = pd.read_parquet("cache/studygroups.parquet")
         self.labels = self.labels.set_index("stay_id")
         self.labels = self.labels[
-            [c for c in self.labels.columns if c.startswith("comp_")]
+            [c for c in self.labels.columns if c.startswith("comp_any")]
         ]
 
         # For now, use the broad categories

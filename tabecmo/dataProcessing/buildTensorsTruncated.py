@@ -9,6 +9,7 @@ from tabecmo import config
 from tabecmo.dataProcessing.derivedDataset import (
     IhmLabelingDatasetTruncated,
     LabeledEcmoDataset,
+    LabeledEcmoDatasetTruncated,
     UnlabeledDataset,
 )
 
@@ -56,6 +57,7 @@ if __name__ == "__main__":
         "stay_id"
     ].to_list()
     ecmo_ds = IhmLabelingDatasetTruncated(ecmo_stay_ids)
+    # ecmo_ds = LabeledEcmoDatasetTruncated()
 
     all_X, all_y = torch.tensor([]), torch.tensor([])
 

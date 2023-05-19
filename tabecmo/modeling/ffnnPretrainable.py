@@ -16,6 +16,8 @@ from torchmetrics.classification import (
     BinaryPrecision,
 )
 
+pl.seed_everything(42)
+
 
 class SimpleFFNN(pl.LightningModule):
     def __init__(self, n_features=89, hidden_dim=64, lr=1e-3) -> None:
@@ -126,16 +128,14 @@ def do_pretraining(pretrain_X, pretrain_y):
     return clf
 
 
-def do_cv(X, y, n_splits=5, base_model=None):
+def do_cv(X, y, model, n_splits=5):
+    print(X.shape)
+    print(y.shape)
     cv = StratifiedKFold(n_splits=n_splits)
     scores = list()
 
     for fold_idx, (train_indices, test_indices) in enumerate(cv.split(X, y)):
-        if base_model:
-            clf = base_model
-        else:
-            clf = SimpleFFNN()
-
+        model = SimpleFFNN()
         trainer = pl.Trainer(
             max_epochs=5,
             logger=False,
@@ -143,15 +143,15 @@ def do_cv(X, y, n_splits=5, base_model=None):
             default_root_dir="cache/ffnn_models",
         )
         trainer.fit(
-            clf,
+            model,
             train_dataloaders=torch.utils.data.TensorDataset(
                 X[train_indices], y[train_indices].unsqueeze(-1)
             ),
         )
 
         with torch.no_grad():
-            clf = clf.eval()
-            preds = clf.forward(X[test_indices])
+            model = model.eval()
+            preds = model.forward(X[test_indices])
 
         score = roc_auc_score(y[test_indices], preds)
         scores.append(score)
@@ -164,19 +164,17 @@ def do_cv(X, y, n_splits=5, base_model=None):
 if __name__ == "__main__":
     X_ecmo = torch.load("cache/ihmtensors/X_ecmo.pt").float()
     y_ecmo = torch.load("cache/ihmtensors/y_ecmo.pt").float()
-
-    X_ecmo_train, X_ecmo_test, y_ecmo_train, y_ecmo_test = train_test_split(
-        X_ecmo, y_ecmo, test_size=0.2, random_state=42
-    )
+    m = SimpleFFNN()
+    do_cv(X_ecmo, y_ecmo, m)
 
     if len(sys.argv) > 1:
-        print(f"Training unsupervised on {sys.argv[1]}")
+        print(f"Pretraining on {sys.argv[1]}")
         x_path = sys.argv[1]
         X_pretraining = torch.load(x_path).float()
         y_pretraining = torch.load(x_path.replace("X", "y")).float()
         base_model = do_pretraining(X_pretraining, y_pretraining)
 
-        do_cv(X_ecmo, y_ecmo, base_model=base_model)
+        do_cv(X_ecmo, y_ecmo, base_model=SimpleFFNN())
 
     else:
         print(f"Training without pretraining")

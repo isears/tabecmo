@@ -1,2 +1,2 @@
-- Train on csurg icu / test on ecmo: 0.6530291109362707
-- Train on ecmo / test on ecmo (loo): 0.6947285601888278
+- Train ECMO / Test ECMO: 0.8756613756613756 (0.0717121550712376)
+- Pre-train autoencoder / Test ECMO: 0.9058862433862434 (0.05927549616936264)
