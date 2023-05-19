@@ -19,7 +19,9 @@ class EmrAutoencoder(pl.LightningModule):
         self.encoding_dim = encoding_dim
 
         self.encoder = nn.Sequential(
-            nn.Linear(n_features, 64), nn.ReLU(), nn.Linear(64, encoding_dim)
+            nn.Linear(n_features, 64),
+            nn.ReLU(),
+            nn.Linear(64, encoding_dim),
         )
         self.decoder = nn.Sequential(
             nn.Linear(encoding_dim, 64), nn.ReLU(), nn.Linear(64, n_features)
@@ -76,7 +78,7 @@ class EncoderClassifier(pl.LightningModule):
 
     def forward(self, x):
         z = self.encoder(x)
-        y_hat = self.classification_head(z)
+        y_hat = self.classification_head(F.relu(z))
         return torch.sigmoid(y_hat)
 
     def training_step(self, batch, batch_idx):

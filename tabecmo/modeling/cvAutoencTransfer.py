@@ -5,7 +5,7 @@ import pytorch_lightning as pl
 import torch
 
 from tabecmo.modeling.cvUtil import do_cv, do_loo_cv
-from tabecmo.modeling.simpleFFNN import EmrAutoencoder, EncoderClassifier, SimpleFFNN
+from tabecmo.modeling.emrAutoencoder import EmrAutoencoder, EncoderClassifier
 
 if __name__ == "__main__":
     pl.seed_everything(42)

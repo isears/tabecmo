@@ -9,7 +9,7 @@ from pytorch_lightning.callbacks import EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from sklearn.model_selection import train_test_split
 
-from tabecmo.modeling.simpleFFNN import EmrAutoencoder
+from tabecmo.modeling.emrAutoencoder import EmrAutoencoder
 
 if __name__ == "__main__":
     pl.seed_everything(42)
