@@ -52,7 +52,6 @@ def train_one_autoencoder(args):
         val_dataloaders=torch.utils.data.TensorDataset(X_valid),
     )
 
-    # print(checkpointer.best_model_path)
     shutil.copy(checkpointer.best_model_path, f"cache/saved_autoenc/{icu_name}.ckpt")
 
     return checkpointer.best_model_path
@@ -77,11 +76,6 @@ if __name__ == "__main__":
     futures = list()
 
     with ProcessPoolExecutor(max_workers=5) as executor:
-        # for tensor_path, unit_name in path_name_map.items():
-        #     futures.append(
-        #         executor.submit(train_one_autoencoder, *(tensor_path, unit_name))
-        #     )
-
         args = [(k, v) for k, v in path_name_map.items()]
         result = executor.map(train_one_autoencoder, args)
 
