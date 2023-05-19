@@ -410,6 +410,9 @@ class LabeledEcmoDataset(DerivedDataset):
 
 
 class LabeledEcmoDatasetTruncated(LabeledEcmoDataset):
+    def __getitem_Y__(self, stay_id: int) -> float:
+        return self.labels.loc[stay_id].astype(int).to_numpy()
+
     def __getitem__(self, index: int):
         stay_id = self.stay_ids[index]
 
@@ -421,9 +424,21 @@ class LabeledEcmoDatasetTruncated(LabeledEcmoDataset):
             .fillna(-1)
         )
 
-        y = torch.tensor(self.labels.loc[stay_id].astype(int).to_numpy())
+        y = self.__getitem_Y__(stay_id)
 
-        return torch.tensor(X_ffill.transpose().to_numpy()[:, -1]), y
+        return torch.tensor(X_ffill.transpose().to_numpy()[:, -1]), torch.tensor(y)
+
+
+class IhmLabeledEcmoDatasetTruncated(LabeledEcmoDatasetTruncated):
+    def __init__(self):
+        super().__init__()
+        self.labels = pd.read_parquet("mimiciv_derived/icustay_detail.parquet")
+        self.labels = self.labels.set_index("stay_id")["hospital_expire_flag"].astype(
+            int
+        )
+
+    def __getitem_Y__(self, stay_id: int):
+        return self.labels.loc[stay_id]
 
 
 class IhmLabelingDataset(DerivedDataset):

@@ -17,100 +17,15 @@ Determine study groups:
 import pandas as pd
 
 
-def get_hadm_label_map(hadm_ids: list):
-    diagnoses = pd.read_csv("mimiciv/hosp/diagnoses_icd.csv")
-    diagnoses = diagnoses[diagnoses["hadm_id"].isin(hadm_ids)]
-
-    # Thrombosis
-    diagnoses["comp_dvt"] = (diagnoses["icd_code"].str.startswith("I8240")) | (
-        diagnoses["icd_code"].str.startswith("4534")
+def apply_filter(fn: callable, df_in) -> pd.DataFrame:
+    before_count = len(df_in)
+    df_out = fn(df_in)
+    after_count = len(df_out)
+    print(
+        f"Applied {fn.__name__}: {before_count} -> {after_count} (dropped {before_count - after_count})"
     )
 
-    diagnoses["comp_pe"] = (diagnoses["icd_code"].str.startswith("I26")) | (
-        diagnoses["icd_code"].str.startswith("4151")
-    )
-
-    diagnoses["comp_ox_thrombosis"] = diagnoses["icd_code"].isin(["T82867A", "99672"])
-
-    diagnoses["comp_retinal_vascular_occlusion"] = (
-        diagnoses["icd_code"].str.startswith("3623")
-    ) | (diagnoses["icd_code"].str.startswith("H341"))
-
-    diagnoses["comp_precerebral_occlusion"] = (
-        diagnoses["icd_code"].str.startswith("433")
-    ) | (diagnoses["icd_code"].str.startswith("I63"))
-
-    diagnoses["comp_cerebral_occlusion"] = (
-        diagnoses["icd_code"].str.startswith("434")
-    ) | (diagnoses["icd_code"].str.startswith("I64"))
-
-    diagnoses["comp_unspec_thrombosis"] = (diagnoses["icd_code"] == "4449") | (
-        diagnoses["icd_code"].str.startswith("I74")
-    )
-
-    diagnoses["comp_any_thrombosis"] = (
-        diagnoses["comp_dvt"]
-        | diagnoses["comp_pe"]
-        | diagnoses["comp_ox_thrombosis"]
-        | diagnoses["comp_retinal_vascular_occlusion"]
-        | diagnoses["comp_precerebral_occlusion"]
-        | diagnoses["comp_cerebral_occlusion"]
-        | diagnoses["comp_unspec_thrombosis"]
-    )
-
-    # Hemorrhage
-    diagnoses["comp_ic_hemorrhage"] = (diagnoses["icd_code"].str.startswith("431")) | (
-        diagnoses["icd_code"].str.startswith("I61")
-    )
-
-    diagnoses["comp_gi_hemorrhage"] = diagnoses["icd_code"].isin(
-        ["578", "5780", "5781", "5789", "K922"]
-    )
-
-    diagnoses["comp_csite_hemorrhage"] = diagnoses["icd_code"].isin(
-        ["99674", "T82838A"]
-    )
-    diagnoses["comp_ssite_hemorrhage"] = diagnoses["icd_code"].isin(["L7622", "99811"])
-    diagnoses["comp_pulm_hemorrhage"] = diagnoses["icd_code"].isin(["R0489", "78639"])
-    diagnoses["comp_epistaxis"] = diagnoses["icd_code"].isin(["R040", "7847"])
-    diagnoses["comp_unspec_hemorrhage"] = diagnoses["icd_code"].isin(
-        ["99811", "I97418", "I9742", "I97618", "I9762"]
-    )
-
-    diagnoses["comp_subarachnoid_hemorrhage"] = (
-        diagnoses["icd_code"].str.startswith("430")
-    ) | (diagnoses["icd_code"].str.startswith("I60"))
-
-    diagnoses["comp_any_hemorrhage"] = (
-        diagnoses["comp_ic_hemorrhage"]
-        | diagnoses["comp_subarachnoid_hemorrhage"]
-        | diagnoses["comp_gi_hemorrhage"]
-        | diagnoses["comp_csite_hemorrhage"]
-        | diagnoses["comp_ssite_hemorrhage"]
-        | diagnoses["comp_pulm_hemorrhage"]
-        | diagnoses["comp_epistaxis"]
-        | diagnoses["comp_unspec_hemorrhage"]
-    )
-
-    # Stroke
-    # ahajournals.org/doi/10.1161/01.str.0000174293.17959.a1
-    diagnoses["comp_other_acute_stroke"] = diagnoses["icd_code"].str.startswith("436")
-    diagnoses["comp_tia"] = (diagnoses["icd_code"].str.startswith("435")) | (
-        diagnoses["icd_code"].str.startswith("G45")
-    )
-
-    diagnoses["comp_any_stroke"] = (
-        diagnoses["comp_other_acute_stroke"]
-        | diagnoses["comp_tia"]
-        | diagnoses["comp_retinal_vascular_occlusion"]
-        | diagnoses["comp_precerebral_occlusion"]
-        | diagnoses["comp_cerebral_occlusion"]
-        | diagnoses["comp_ic_hemorrhage"]
-        | diagnoses["comp_subarachnoid_hemorrhage"]
-    )
-
-    complication_cols = [c for c in diagnoses.columns if c.startswith("comp_")]
-    return diagnoses[complication_cols + ["hadm_id"]].groupby("hadm_id").agg("max")
+    return df_out
 
 
 if __name__ == "__main__":
@@ -141,47 +56,54 @@ if __name__ == "__main__":
     first_cannulation_events = (
         ecmo_events[(ecmo_events["itemid"].isin([229268, 229840]))]
         .groupby("stay_id")["charttime"]
-        .agg("max")
+        .agg("min")
     )
 
-    icustays["ECMO"] = icustays["stay_id"].apply(lambda sid: int(sid in ecmo_stayids))
+    ecmo_stays = icustays[icustays["stay_id"].isin(ecmo_stayids)]
+    print(f"[*] Starting with {len(ecmo_stays)} ecmo stays")
 
-    # Some first-cannulations happen after outtime, for some reason, so we will drop them
-    icustays = pd.merge(
-        icustays,
+    ecmo_stays = pd.merge(
+        ecmo_stays,
         first_cannulation_events.rename("cannulationtime"),
         how="left",
         left_on="stay_id",
         right_index=True,
     )
 
-    icustays = icustays[
-        (icustays["ECMO"] == 0) | (icustays["cannulationtime"] < icustays["outtime"])
-    ]
+    # Some first-cannulations happen after outtime, for some reason, so we will drop them
+    def drop_first_cannulation_after_outtime(df_in: pd.DataFrame):
+        return df_in[df_in["cannulationtime"] < df_in["outtime"]]
 
-    # drop double stays if not ECMO
-    has_multiple_stays = icustays.groupby("hadm_id").apply(lambda g: len(g) > 1)
-    multiple_stay_hadms = has_multiple_stays[has_multiple_stays].index.to_list()
-    print(
-        f"[*] Found {len(multiple_stay_hadms)} hospital admissions with multiple ICU stays"
-    )
+    ecmo_stays = apply_filter(drop_first_cannulation_after_outtime, ecmo_stays)
 
-    icustays = icustays[
-        (~icustays["hadm_id"].isin(multiple_stay_hadms)) | (icustays["ECMO"] == 1)
-    ]
+    def drop_short_stays(df_in: pd.DataFrame):
+        return df_in[df_in["los"] > 2]
 
-    # drop stays < 12 hrs if not ECMO
-    icustays = icustays[(icustays["los"] > 0.5) | (icustays["ECMO"] == 1)]
+    ecmo_stays = apply_filter(drop_short_stays, ecmo_stays)
 
-    # Labels
-    print("[*] Getting labels...")
-    hadm_label_map = get_hadm_label_map(icustays["hadm_id"].to_list())
+    def drop_subsequent_stays_for_subject(df_in: pd.DataFrame):
+        # If a subject has multiple ICU stays, drop all but first
+        return df_in.groupby("subject_id", group_keys=False).apply(
+            lambda g: g[g["intime"] == g["intime"].max()]
+        )
 
-    # NOTE: implicitly dropping anything w/no listed diagnoses
-    icustays = pd.merge(
-        icustays, hadm_label_map, how="right", left_on="hadm_id", right_index=True
-    )
+    ecmo_stays = apply_filter(drop_subsequent_stays_for_subject, ecmo_stays)
 
-    icustays.to_parquet("cache/studygroups.parquet", index=False)
+    print(f"[*] Starting with {len(icustays)} general ICU stays")
+
+    # In general ICU population, drop ECMO stays
+    def drop_ecmo_subjects(df_in: pd.DataFrame):
+        return df_in[~df_in["subject_id"].isin(ecmo_stays["subject_id"])]
+
+    general_stays = apply_filter(drop_short_stays, icustays)
+    general_stays = apply_filter(drop_ecmo_subjects, general_stays)
+    general_stays = apply_filter(drop_subsequent_stays_for_subject, general_stays)
+
+    general_stays["ECMO"] = 0
+    ecmo_stays["ECMO"] = 1
+
+    final_study_group = pd.concat([general_stays, ecmo_stays])
+
+    final_study_group.to_parquet("cache/studygroups.parquet", index=False)
 
     print("done")

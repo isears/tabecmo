@@ -4,3 +4,7 @@
 - Pre-train MICU:
 - Pre-train MSICU:
 - Pre-train SICU:
+
+
+
+- Pre-trained combined: 0.8931686046511627
