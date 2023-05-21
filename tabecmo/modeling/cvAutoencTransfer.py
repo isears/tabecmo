@@ -14,6 +14,6 @@ if __name__ == "__main__":
 
     autoencoder = EmrAutoencoder.load_from_checkpoint(sys.argv[1])
 
-    clf = EncoderClassifier(autoencoder)
+    clf = EncoderClassifier(autoencoder, lr=1e-4)
 
     do_loo_cv(X_ecmo, y_ecmo, clf)

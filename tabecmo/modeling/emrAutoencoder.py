@@ -66,14 +66,20 @@ class EmrAutoencoder(pl.LightningModule):
 
 
 class EncoderClassifier(pl.LightningModule):
-    def __init__(self, autoencoder: EmrAutoencoder, lr=1e-3) -> None:
+    def __init__(self, autoencoder: EmrAutoencoder = None, lr=1e-3) -> None:
         super().__init__()
+
+        if autoencoder == None:
+            autoencoder = EmrAutoencoder()
 
         self.encoder = autoencoder.encoder
         self.classification_head = nn.Linear(autoencoder.encoding_dim, 1)
         self.loss_fn = torch.nn.BCELoss()
 
         self.scorers = [BinaryAUROC(), BinaryPrecision()]
+
+        for s in self.scorers:
+            s.to("cuda")
 
         self.lr = lr
 

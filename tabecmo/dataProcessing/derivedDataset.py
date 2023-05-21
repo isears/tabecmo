@@ -390,19 +390,21 @@ class LabeledEcmoDataset(DerivedDataset):
 
     def __getitem_X__(self, stay_id: int):
         X = super().__getitem_X__(stay_id)
-        cannulation_events = self.ecmoevents[
+        configuration_events = self.ecmoevents[
             (self.ecmoevents["stay_id"] == stay_id)
             & (self.ecmoevents["itemid"].isin([229268, 229840]))
         ]
 
         # Sometimes there are cannulation events after the end of the ICU stay
         # Must drop that
-        cannulation_events = cannulation_events[
-            cannulation_events["charttime"] < X.index[-1]
+        configuration_events = configuration_events[
+            configuration_events["charttime"] < X.index[-1]
         ]
-        cannulation_time = cannulation_events["charttime"].max()
+        cannulation_time = configuration_events["charttime"].min()
         cannulation_idx = (X.index > cannulation_time).tolist().index(True)
-        X = X.iloc[:cannulation_idx]
+
+        # X = X.iloc[: cannulation_idx + 24]
+        X = X.iloc[:-24]
         return X
 
     def __getitem__(self, index: int):
@@ -475,7 +477,7 @@ class IhmLabelingDatasetTruncated(IhmLabelingDataset):
         stay_id = self.stay_ids[index]
 
         X_complete = self.__getitem_X__(stay_id)
-        X = X_complete.iloc[:-36]
+        X = X_complete.iloc[:-24]
         X_ffill = (
             X.applymap(lambda item: float("nan") if item == -1 else item)
             .fillna(method="ffill")

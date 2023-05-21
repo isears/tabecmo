@@ -1,8 +1,11 @@
 import copy
+import tempfile
 
 import numpy as np
 import pytorch_lightning as pl
 import torch
+from pytorch_lightning.callbacks import EarlyStopping
+from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import StratifiedKFold
 from tqdm import tqdm
@@ -29,19 +32,60 @@ def do_one_fold(X_train, X_test, y_train, y_test, model):
     return y_test, preds
 
 
-def do_cv(X_cv, y_cv, model):
+def do_cv(X_cv, y_cv, model: pl.LightningModule):
     cv = StratifiedKFold(n_splits=5)
     scores = list()
 
     for fold_idx, (train_indices, test_indices) in enumerate(cv.split(X_cv, y_cv)):
-        this_fold_y, this_fold_preds = do_one_fold(
-            X_cv[train_indices],
-            X_cv[test_indices],
-            y_cv[train_indices],
-            y_cv[test_indices],
-            model,
+        # this_fold_y, this_fold_preds = do_one_fold(
+        #     X_cv[train_indices],
+        #     X_cv[test_indices],
+        #     y_cv[train_indices],
+        #     y_cv[test_indices],
+        #     model,
+        # )
+        this_fold_model = copy.deepcopy(model)
+
+        temp_dir_ckpt = tempfile.TemporaryDirectory()
+        temp_dir_model = tempfile.TemporaryDirectory()
+
+        checkpointer = ModelCheckpoint(
+            save_top_k=1,
+            monitor="val_loss",
+            mode="min",
+            dirpath=temp_dir_ckpt.name,
         )
-        score = roc_auc_score(this_fold_y, this_fold_preds)
+
+        trainer = pl.Trainer(
+            max_epochs=100,
+            enable_progress_bar=False,
+            callbacks=[
+                EarlyStopping(
+                    monitor="val_loss",
+                    mode="min",
+                    verbose=True,
+                    patience=3,
+                    check_finite=False,
+                ),
+                checkpointer,
+            ],
+            default_root_dir=temp_dir_model.name,
+        )
+
+        trainer.fit(
+            this_fold_model,
+            train_dataloaders=torch.utils.data.TensorDataset(
+                X_cv[train_indices], y_cv[train_indices]
+            ),
+            val_dataloaders=torch.utils.data.TensorDataset(
+                X_cv[test_indices], y_cv[test_indices]
+            ),
+        )
+
+        this_fold_model.load_from_checkpoint(checkpointer.best_model_path)
+        this_fold_preds = this_fold_model(X_cv[test_indices])
+        score = roc_auc_score(y_cv[test_indices], this_fold_preds.detach())
+
         scores.append(score)
 
     scores = np.array(scores)
