@@ -16,10 +16,10 @@ def cv_one_model(model_name):
         autoencoder = EmrAutoencoder.load_from_checkpoint(
             f"cache/saved_autoenc/{model_name}.ckpt"
         )
+        clf = EncoderClassifier(autoencoder)
     else:
         autoencoder = EmrAutoencoder()
-
-    clf = EncoderClassifier(autoencoder)
+        clf = EncoderClassifier(autoencoder)
 
     return do_loo_cv(X_ecmo, y_ecmo, clf)
 
