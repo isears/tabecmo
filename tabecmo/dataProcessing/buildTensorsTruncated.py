@@ -6,13 +6,7 @@ import pandas as pd
 import torch
 
 from tabecmo import config
-from tabecmo.dataProcessing.derivedDataset import (
-    IhmLabeledEcmoDatasetTruncated,
-    IhmLabelingDatasetTruncated,
-    LabeledEcmoDataset,
-    LabeledEcmoDatasetTruncated,
-    UnlabeledDataset,
-)
+from tabecmo.dataProcessing.derivedDataset import SnapshotDataset
 
 if __name__ == "__main__":
     studygroup = pd.read_parquet("cache/studygroups.parquet")
@@ -22,7 +16,7 @@ if __name__ == "__main__":
 
     # Build unlabeled tensors for each ICU group
     for unit in [c for c in studygroup.columns if c.startswith("unit_")]:
-        sids = studygroup[(studygroup[unit] == 1) & (studygroup["ECMO"] == 0)][
+        stay_ids = studygroup[(studygroup[unit] == 1) & (studygroup["ECMO"] == 0)][
             "stay_id"
         ].to_list()
 
@@ -36,7 +30,7 @@ if __name__ == "__main__":
 
         print(f"[*] Loading unlabeled data for {unit}")
 
-        ds = IhmLabelingDatasetTruncated(sids)
+        ds = SnapshotDataset(stay_ids)
 
         all_X = torch.tensor([])
         all_y = torch.tensor([])
@@ -63,8 +57,7 @@ if __name__ == "__main__":
 
     # Build X, y tensors for ECMO
     ecmo_stay_ids = studygroup[(studygroup["ECMO"] == 1)]["stay_id"].to_list()
-    # ecmo_ds = IhmLabelingDatasetTruncated(ecmo_stay_ids)
-    ecmo_ds = IhmLabeledEcmoDatasetTruncated()
+    ecmo_ds = SnapshotDataset(ecmo_stay_ids)
 
     all_X, all_y = torch.tensor([]), torch.tensor([])
 
