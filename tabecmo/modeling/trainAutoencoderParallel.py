@@ -1,11 +1,8 @@
 import shutil
 from concurrent.futures import ProcessPoolExecutor, wait
 
-import numpy as np
 import pytorch_lightning as pl
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 from pytorch_lightning.callbacks import EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from sklearn.model_selection import train_test_split
@@ -54,13 +51,14 @@ def train_one_autoencoder(args):
 
     shutil.copy(checkpointer.best_model_path, f"cache/saved_autoenc/{icu_name}.ckpt")
 
-    return checkpointer.best_model_path
+    return checkpointer.best_model_path, checkpointer.best_model_score
 
 
 if __name__ == "__main__":
     pl.seed_everything(42)
     data_root_path = "cache/ihmtensors"
     path_name_map = {
+        "X_combined.pt": "combined",
         "X_Cardiac.Vascular.Intensive.Care.Unit.pt": "cvicu",
         "X_Coronary.Care.Unit.pt": "ccu",
         "X_Medical.Intensive.Care.Unit.pt": "micu",
@@ -70,7 +68,6 @@ if __name__ == "__main__":
         "X_Neuro.Surgical.Intensive.Care.Unit.pt": "nsicu",
         "X_Surgical.Intensive.Care.Unit.pt": "sicu",
         "X_Trauma.SICU.pt": "tsicu",
-        "X_combined.pt": "combined",
     }
 
     futures = list()
@@ -80,4 +77,4 @@ if __name__ == "__main__":
         result = executor.map(train_one_autoencoder, args)
 
         for r in result:
-            print(r)
+            print(f"[+] {r}")

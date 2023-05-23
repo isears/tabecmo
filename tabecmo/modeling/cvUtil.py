@@ -15,7 +15,7 @@ def do_one_fold(X_train, X_test, y_train, y_test, model):
     this_fold_model = copy.deepcopy(model)
     temp_dir_model = tempfile.TemporaryDirectory()
     trainer = pl.Trainer(
-        max_epochs=3,
+        max_epochs=5,
         logger=False,
         enable_progress_bar=False,
         default_root_dir=temp_dir_model.name,

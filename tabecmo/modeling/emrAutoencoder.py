@@ -14,7 +14,7 @@ from torchmetrics.classification import (
 
 
 class EmrAutoencoder(pl.LightningModule):
-    def __init__(self, n_features=89, encoding_dim=16, lr=1e-3) -> None:
+    def __init__(self, n_features=83, encoding_dim=16, lr=1e-3) -> None:
         super().__init__()
         self.encoding_dim = encoding_dim
 

@@ -16,14 +16,7 @@ standard_tables = [
 ]
 
 meds_tables = [
-    "dobutamine",
-    "dopamine",
-    "epinephrine",
     "invasive_line",
-    "milrinone",
-    "norepinephrine",
-    "phenylephrine",
-    "vasopressin",
     "ventilation",
 ]
 

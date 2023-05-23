@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 # Need to re-write the functions from CV util b/c they're not designed to deal with an sklearn model
 def do_one_fold(X_train, X_test, y_train, y_test, model):
-    model.fit(X_train, y_train.unsqueeze(-1))
+    model.fit(X_train, y_train)
 
     preds = model.predict_proba(X_test)[:, 1]
 
