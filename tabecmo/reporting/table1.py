@@ -1,8 +1,6 @@
-from dataclasses import dataclass
-import pandas as pd
 from typing import List
-import matplotlib.pyplot as plt
-import json
+
+import pandas as pd
 
 
 class Table1Generator(object):
@@ -10,60 +8,51 @@ class Table1Generator(object):
         self.stay_ids = stay_ids
         self.table1 = pd.DataFrame(columns=["Item", "Value"])
 
-        self.all_df = pd.read_csv("mimiciv/icu/icustays.csv")
-        self.all_df = self.all_df[self.all_df["stay_id"].isin(self.stay_ids)]
+        self.all_df = pd.read_parquet("cache/studygroups.parquet")
+        self.all_df = self.all_df[self.all_df["stay_id"].isin(stay_ids)]
         self.total_stays = len(self.all_df.index)
 
         # Create df with all demographic data
         self.all_df = self.all_df.merge(
-            pd.read_csv("mimiciv/derived/sepsis3.csv"),
+            pd.read_parquet(
+                "mimiciv_derived/icustay_detail.parquet",
+                columns=[
+                    "stay_id",
+                    "gender",
+                    "admission_age",
+                    "race",
+                    "hospital_expire_flag",
+                ],
+            ),
             how="left",
-            on=["stay_id", "subject_id"],
+            on=["stay_id"],
         )
 
-        self.all_df = self.all_df.merge(
-            pd.read_csv("mimiciv/core/patients.csv"), how="left", on=["subject_id"]
+        charlson = pd.read_parquet("mimiciv_derived/charlson.parquet")
+        charlson = charlson.drop(
+            columns=[c for c in charlson.columns if c in ["subject_id", "age_score"]]
         )
 
-        self.all_df = self.all_df.merge(
-            pd.read_csv("mimiciv/core/admissions.csv"),
-            how="left",
-            on=["hadm_id", "subject_id"],
-        )
-
-        diagnoses_icd = pd.read_csv("mimiciv/hosp/diagnoses_icd.csv")
-        diagnoses_icd = (
-            diagnoses_icd[["hadm_id", "icd_code"]]
-            .groupby("hadm_id")["icd_code"]
-            .apply(list)
-        )
-
-        self.all_df = self.all_df.merge(
-            diagnoses_icd, how="left", left_on="hadm_id", right_index=True
-        )
-
-        # Replace nans
-        self.all_df["icd_code"] = self.all_df["icd_code"].apply(
-            lambda x: [] if type(x) != list else x
-        )
-
-        time_columns = [
-            "intime",
-            "outtime",
-            "sofa_time",
-            "culture_time",
-            "antibiotic_time",
-            "suspected_infection_time",
-            "dod",
-            "admittime",
-            "dischtime",
-            "deathtime",
-            "edregtime",
-            "edouttime",
+        # Save the available charlson comorbidity categories for use later
+        self.charlson_categories = [
+            c
+            for c in charlson.columns
+            if c not in ["hadm_id", "charlson_comorbidity_index"]
         ]
 
-        for tc in time_columns:
-            self.all_df[tc] = pd.to_datetime(self.all_df[tc])
+        self.all_df = pd.merge(
+            self.all_df,
+            charlson,
+            how="left",
+            on="hadm_id",
+        )
+
+        # Reverse the one-hot encoding of the ICU units
+        unit_cols = [c for c in self.all_df.columns if c.startswith("unit_")]
+        self.all_df["unit"] = (
+            self.all_df[unit_cols].idxmax(axis=1).apply(lambda x: x[5:])
+        )
+        self.all_df = self.all_df.drop(columns=unit_cols)
 
         # Make sure there's only one stay id per entry so we can confidently calculate statistics
         assert len(self.all_df["stay_id"]) == self.all_df["stay_id"].nunique()
@@ -80,57 +69,15 @@ class Table1Generator(object):
     def _pprint_mean(self, values: pd.Series):
         return f"{values.mean():.2f} (median {values.median():.2f}, std {values.std():.2f})"
 
-    def _tablegen_sepsis(self) -> None:
-        # Count sepsis
-        sepsis_count = len(self.all_df[self.all_df["sepsis3"] == True])
-
+    def _tablegen_count(self) -> None:
         self._add_table_row(
-            item="Sepsis Prevalence (Sepsis3)", value=self._pprint_percent(sepsis_count)
-        )
-
-        # Calculate average time of sepsis onset, as a percentage of LOS
-        sepsis_only = self.all_df[self.all_df["sepsis3"] == True]
-
-        sepsis_only["sepsis_time"] = sepsis_only.apply(
-            lambda row: max(row["sofa_time"], row["suspected_infection_time"]), axis=1
-        )
-
-        sepsis_only["sepsis_percent_los"] = (
-            sepsis_only["sepsis_time"] - sepsis_only["intime"]
-        ) / (sepsis_only["outtime"] - sepsis_only["intime"])
-
-        self._add_table_row(
-            item="Average % of Length of Stay of Sepsis Onset",
-            value=self._pprint_mean(sepsis_only["sepsis_percent_los"] * 100),
-        )
-
-        sepsis_only["sepsis_timedelta_hours"] = sepsis_only.apply(
-            lambda row: (row["sepsis_time"] - row["intime"]).total_seconds()
-            / (60 * 60),
-            axis=1,
-        )
-
-        self._add_table_row(
-            item="Average Time of Sepsis Onset after ICU Admission (hrs)",
-            value=self._pprint_mean(sepsis_only["sepsis_timedelta_hours"]),
-        )
-
-        self._add_table_row(
-            item="Septic ICU Stays with Sepsis Onset > 24 hrs after Admission",
-            value=self._pprint_percent(
-                n=len(sepsis_only[sepsis_only["sepsis_timedelta_hours"] > 24]),
-                total=len(sepsis_only),
-            ),
+            item="Total Stays", value=self._pprint_percent(len(self.all_df))
         )
 
     def _tablegen_general_demographics(self) -> None:
         for demographic_name in [
             "gender",
-            "ethnicity",
-            "marital_status",
-            "insurance",
-            "admission_type",
-            "language",
+            "race",
             "hospital_expire_flag",
         ]:
             for key, value in (
@@ -141,85 +88,39 @@ class Table1Generator(object):
                 )
 
     def _tablegen_age(self) -> None:
-        self.all_df["age_at_intime"] = self.all_df.apply(
-            lambda row: (
-                ((row["intime"].year) - row["anchor_year"]) + row["anchor_age"]
-            ),
-            axis=1,
-        )
-
         self._add_table_row(
             item="Average Age at ICU Admission",
-            value=self._pprint_mean(self.all_df["age_at_intime"]),
+            value=self._pprint_mean(self.all_df["admission_age"]),
         )
 
     def _tablegen_comorbidities(self) -> None:
-        @dataclass
-        class icd_comorbidity:
-            name: str
-            codes: List[str]
-            points: int
-
-            def __eq__(self, __o: object) -> bool:
-                return self.name == __o.name and self.__class__ == __o.__class__
-
-        cci = dict()
-        with open("src/tabsep/reporting/cci.json", "r") as f:
-            cci = json.load(f)
-
-        comorbidities = [
-            icd_comorbidity(
-                name=key,
-                # Basically, treat all codes as startswith codes
-                codes=val["Match Codes"] + val["Startswith Codes"],
-                points=int(val["Points"]),
-            )
-            for key, val in cci.items()
-        ]
-
-        def relevant_comorbidities(icd_code_list):
-            ret = list()
-            for c in comorbidities:
-                for code in icd_code_list:
-                    if len(list(filter(code.startswith, c.codes))) != 0:
-                        ret.append(c)
-
-            return ret
-
-        self.all_df["comorbidities"] = self.all_df["icd_code"].apply(
-            relevant_comorbidities
-        )
-
-        for c in comorbidities:
-            comorbidity_count = len(
-                self.all_df[
-                    self.all_df["comorbidities"].apply(
-                        lambda comorbidity_list: c in comorbidity_list
-                    )
-                ].index
-            )
+        for c in self.charlson_categories:
+            comorbidity_count = self.all_df[c].sum()
 
             self._add_table_row(
-                f"[comorbidity] {c.name}", self._pprint_percent(comorbidity_count)
+                f"[comorbidity] {c}", self._pprint_percent(comorbidity_count)
             )
-
-        self.all_df["cci_score"] = self.all_df["comorbidities"].apply(
-            lambda comorbidity_list: sum(c.points for c in comorbidity_list)
-        )
 
         self._add_table_row(
             item="[comorbidity] Average CCI",
-            value=self._pprint_mean(self.all_df["cci_score"]),
+            value=self._pprint_mean(self.all_df["charlson_comorbidity_index"]),
         )
 
     def _tablegen_LOS(self) -> None:
-        self.all_df["los"] = self.all_df.apply(
-            lambda x: (x["outtime"] - x["intime"]).total_seconds() / (60 * 60), axis=1
-        )
         self._add_table_row(
-            item="Average Length of ICU Stay (hrs)",
+            item="Average Length of ICU Stay (days)",
             value=self._pprint_mean(self.all_df["los"]),
         )
+
+    def _tablegen_unit(self) -> None:
+        for unit_name, count in self.all_df["unit"].value_counts().to_dict().items():
+            self._add_table_row(
+                item=f"[unit] {unit_name}", value=self._pprint_percent(count)
+            )
+
+    def _tablegen_ECMO(self) -> None:
+        ecmo_count = self.all_df["ECMO"].sum()
+        self._add_table_row(item="ECMO", value=self._pprint_percent(ecmo_count))
 
     def populate(self) -> pd.DataFrame:
         tablegen_methods = [m for m in dir(self) if m.startswith("_tablegen")]
@@ -233,10 +134,26 @@ class Table1Generator(object):
 
 
 if __name__ == "__main__":
-    sids = pd.read_csv("cache/included_stayids.csv").squeeze("columns")
-    t1generator = Table1Generator(sids.to_list())
-    t1 = t1generator.populate()
+    sg = pd.read_parquet("cache/studygroups.parquet")
+    t1generator_all = Table1Generator(sg["stay_id"].to_list())
+    t1 = t1generator_all.populate()
 
     print(t1)
 
-    t1.to_csv("results/table1.csv", index=False)
+    t1.to_csv("results/table1_all.csv", index=False)
+
+    ecmo_stays = sg[sg["ECMO"] == 1]["stay_id"].to_list()
+    t1generator_ECMO = Table1Generator(ecmo_stays)
+    t1 = t1generator_ECMO.populate()
+
+    print(t1)
+
+    t1.to_csv("results/table1_ECMO.csv", index=False)
+
+    nonecmo_stays = sg[sg["ECMO"] == 0]["stay_id"].to_list()
+    t1generator_ECMO = Table1Generator(nonecmo_stays)
+    t1 = t1generator_ECMO.populate()
+
+    print(t1)
+
+    t1.to_csv("results/table1_nonECMO.csv", index=False)
