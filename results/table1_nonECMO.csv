@@ -1,6 +1,7 @@
 Item,Value
 ECMO,"0, (0.00 %)"
 Average Length of ICU Stay (days),"5.74 (median 3.75, std 5.76)"
+VA Configuration,"0, (0.00 %)"
 Average Age at ICU Admission,"65.84 (median 68.00, std 16.48)"
 [comorbidity] myocardial_infarct,"4892, (18.04 %)"
 [comorbidity] congestive_heart_failure,"8415, (31.03 %)"

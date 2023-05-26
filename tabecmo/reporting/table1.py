@@ -122,6 +122,50 @@ class Table1Generator(object):
         ecmo_count = self.all_df["ECMO"].sum()
         self._add_table_row(item="ECMO", value=self._pprint_percent(ecmo_count))
 
+    def _tablegen_VA_ECMO(self) -> None:
+        ecmoevents = pd.read_parquet("cache/ecmoevents.parquet")
+        # Get circuit configuration events
+        circuit_config_events = ecmoevents[ecmoevents["itemid"].isin([229268, 229840])]
+        circuit_config_events = circuit_config_events[
+            circuit_config_events["stay_id"].isin(self.all_df["stay_id"])
+        ]
+        va_configs = circuit_config_events[circuit_config_events["value"] == "VA"]
+        assert (va_configs["stay_id"].isin(self.all_df["stay_id"])).all()
+
+        self._add_table_row(
+            item="VA Configuration",
+            value=self._pprint_percent(va_configs["stay_id"].nunique()),
+        )
+
+    def _tablegen_ECMO_duration(self) -> None:
+        ecmoevents = pd.read_parquet("cache/ecmoevents.parquet")
+        # Get flow events
+        flow_events = ecmoevents[ecmoevents["itemid"].isin([229270, 229842])]
+        flow_events = flow_events[flow_events["stay_id"].isin(self.all_df["stay_id"])]
+
+        if len(flow_events) > 0:
+            flow_starttimes = flow_events.groupby("stay_id")["charttime"].agg("min")
+            flow_endtimes = flow_events.groupby("stay_id")["charttime"].agg("max")
+            flow_durations = pd.merge(
+                flow_starttimes.rename("starttime"),
+                flow_endtimes.rename("endtime"),
+                how="left",
+                left_index=True,
+                right_index=True,
+            )
+            flow_durations["duration"] = (
+                flow_durations["endtime"] - flow_durations["starttime"]
+            )
+
+            flow_durations["duration_hours"] = flow_durations["duration"].apply(
+                lambda t: t.total_seconds() / (60 * 60)
+            )
+
+            self._add_table_row(
+                item="ECMO time (hrs)",
+                value=self._pprint_mean(flow_durations["duration_hours"]),
+            )
+
     def populate(self) -> pd.DataFrame:
         tablegen_methods = [m for m in dir(self) if m.startswith("_tablegen")]
 

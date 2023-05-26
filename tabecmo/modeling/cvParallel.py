@@ -1,4 +1,5 @@
 import logging
+import sys
 from concurrent.futures import ProcessPoolExecutor
 
 import pytorch_lightning as pl
@@ -25,7 +26,11 @@ def cv_one_model(model_name):
 
 
 if __name__ == "__main__":
-    pl.seed_everything(42)
+    if len(sys.argv) > 1:
+        pl.seed_everything(int(sys.argv[1]))
+    else:
+        pl.seed_everything(42)
+
     logging.getLogger("lightning").setLevel(logging.ERROR)
 
     data_root_path = "cache/ihmtensors"
