@@ -1,4 +1,3 @@
-import sys
 
 import numpy as np
 import pytorch_lightning as pl
@@ -11,10 +10,32 @@ from sklearn.model_selection import train_test_split
 
 from tabecmo.modeling.emrAutoencoder import EmrAutoencoder
 
+import argparse
+
+def argparse_setup():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        'x_path',
+    )
+
+    parser.add_argument(
+        '-n',
+        type=int,
+        default=0,
+        dest='n'
+    )
+
+    return parser.parse_args()
+
 if __name__ == "__main__":
+    args = argparse_setup()
+
     pl.seed_everything(42)
-    x_path = sys.argv[1]
-    X_pretraining = torch.load(x_path).float()
+    X_pretraining = torch.load(args.x_path).float()
+
+    if args.n != 0:
+        indices = np.random.choice(range(0, X_pretraining.shape[0]), size=args.n, replace=False)
+        X_pretraining = X_pretraining[indices]
 
     clf = EmrAutoencoder()
 
