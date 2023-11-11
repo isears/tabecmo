@@ -9,9 +9,12 @@ from tabecmo.modeling.cvUtil import do_cv, do_loo_cv
 from tabecmo.modeling.emrAutoencoder import EmrAutoencoder, EncoderClassifier
 import argparse
 import numpy as np
+import datetime
+import pandas as pd
+import os
 
 def cv_one_model(args):
-    model_name, fine_tuning_size = args
+    model_name, pretraining_size, fine_tuning_size = args
     X_ecmo = torch.load("cache/ihmtensors/X_ecmo.pt").float()
     y_ecmo = torch.load("cache/ihmtensors/y_ecmo.pt").float()
 
@@ -22,7 +25,7 @@ def cv_one_model(args):
 
     if model_name is not None:
         autoencoder = EmrAutoencoder.load_from_checkpoint(
-            f"cache/saved_autoenc/{model_name}.ckpt"
+            f"cache/saved_autoenc/{model_name}.n{pretraining_size}.ckpt"
         )
         clf = EncoderClassifier(autoencoder)
     else:
@@ -83,15 +86,12 @@ if __name__ == "__main__":
         "X_combined.pt": "combined",
     }
 
-    # update name with -n argument
-    available_autoencoders = {k: f'{v}.n{cline_args.n}' for k, v in available_autoencoders.items()}
-
     futures = list()
 
     with ProcessPoolExecutor(max_workers=5) as executor:
-        args = [(v, cline_args.m) for _, v in available_autoencoders.items()]
+        args = [(v, cline_args.n, cline_args.m) for _, v in available_autoencoders.items()]
         args += [
-            (None, cline_args.m)
+            (None, cline_args.n, cline_args.m)
         ]  # last model (ECMO w/out pretraining) will not load a saved autoencoder
         result = executor.map(cv_one_model, args)
 
@@ -99,8 +99,30 @@ if __name__ == "__main__":
 
     print("[+] Done with evaluations")
     print(15 * "=")
-    for model_name, score in zip(args, result):
-        if model_name is None:
-            model_name = "unpretrained"
 
+    saved_results = list()
+    for (model_name, _, _), score in zip(args, result):
         print(f"{model_name}: {score}")
+        saved_results.append(score)
+
+
+    this_run_df = pd.DataFrame(data={
+        'Pretraining': [model_name for (model_name, _, _) in args],
+        'Pretraining Size': [cline_args.n] * len(args),
+        'Fine Tuning Size': [cline_args.m] * len(args),
+        'Score': saved_results,
+        'Seed': [cline_args.s] * len(args),
+        'Timestamp': [datetime.datetime.now()] * len(args)
+    })
+
+    if not os.path.exists('results/performance.parquet'):
+        results_df = pd.DataFrame()
+    else:
+        results_df = pd.read_parquet('results/performance.parquet')
+
+    updated_df = pd.concat([results_df, this_run_df], ignore_index=True)
+    updated_df = updated_df.sort_values('Timestamp').drop_duplicates(subset=[c for c in updated_df.columns if c not in ['Timestamp', 'Score']], keep='last').reset_index(drop=True)
+    updated_df.to_parquet('results/performance.parquet')
+
+        
+
