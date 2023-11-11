@@ -7,6 +7,7 @@ import torch
 
 from tabecmo.modeling.cvUtil import do_cv, do_loo_cv
 from tabecmo.modeling.emrAutoencoder import EmrAutoencoder, EncoderClassifier
+import argparse
 
 
 def cv_one_model(model_name):
@@ -25,11 +26,29 @@ def cv_one_model(model_name):
     return do_loo_cv(X_ecmo, y_ecmo, clf)
 
 
+def argparse_setup():
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        '-n',
+        type=int,
+        default=0,
+        dest='n'
+    )
+
+    parser.add_argument(
+        '-s',
+        type=int,
+        default=42,
+        dest='s'
+    )
+
+    return parser.parse_args()
+
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        pl.seed_everything(int(sys.argv[1]))
-    else:
-        pl.seed_everything(42)
+    cline_args = argparse_setup()
+    pl.seed_everything(cline_args.s)
+
 
     logging.getLogger("lightning").setLevel(logging.ERROR)
 
@@ -39,13 +58,17 @@ if __name__ == "__main__":
         "X_Coronary.Care.Unit.pt": "ccu",
         "X_Medical.Intensive.Care.Unit.pt": "micu",
         "X_Medical-Surgical.Intensive.Care.Unit.pt": "msicu",
-        "X_Neuro.Intermediate.pt": "ni",
-        "X_Neuro.Stepdown.pt": "ns",
+        # These don't have enough examples to support 1k minimum pretraining
+        # "X_Neuro.Intermediate.pt": "ni",
+        # "X_Neuro.Stepdown.pt": "ns",
         "X_Neuro.Surgical.Intensive.Care.Unit.pt": "nsicu",
         "X_Surgical.Intensive.Care.Unit.pt": "sicu",
         "X_Trauma.SICU.pt": "tsicu",
         "X_combined.pt": "combined",
     }
+
+    # update name with -n argument
+    available_autoencoders = {k: f'{v}.n{cline_args.n}' for k, v in available_autoencoders.items()}
 
     futures = list()
 
