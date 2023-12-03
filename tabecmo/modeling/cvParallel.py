@@ -39,14 +39,6 @@ def argparse_setup():
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        '-n',
-        type=int,
-        default=0,
-        dest='n',
-        help='pretraining size (requires existance of pretrained model @ n)'
-    )
-
-    parser.add_argument(
         '-s',
         type=int,
         default=42,
@@ -71,27 +63,15 @@ if __name__ == "__main__":
 
     logging.getLogger("lightning").setLevel(logging.ERROR)
 
-    data_root_path = "cache/ihmtensors"
-    available_autoencoders = {
-        "X_Cardiac.Vascular.Intensive.Care.Unit.pt": "cvicu",
-        "X_Coronary.Care.Unit.pt": "ccu",
-        "X_Medical.Intensive.Care.Unit.pt": "micu",
-        "X_Medical-Surgical.Intensive.Care.Unit.pt": "msicu",
-        # These don't have enough examples to support 1k minimum pretraining
-        # "X_Neuro.Intermediate.pt": "ni",
-        # "X_Neuro.Stepdown.pt": "ns",
-        "X_Neuro.Surgical.Intensive.Care.Unit.pt": "nsicu",
-        "X_Surgical.Intensive.Care.Unit.pt": "sicu",
-        "X_Trauma.SICU.pt": "tsicu",
-        "X_combined.pt": "combined",
-    }
-
     futures = list()
 
+    # TODO: hard-coded for now
+    available_pretraining_sizes = [8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384]
+
     with ProcessPoolExecutor(max_workers=5) as executor:
-        args = [(v, cline_args.n, cline_args.m) for _, v in available_autoencoders.items()]
+        args = [("combined", n, cline_args.m) for n in available_pretraining_sizes]
         args += [
-            (None, cline_args.n, cline_args.m)
+            (None, 0, cline_args.m)
         ]  # last model (ECMO w/out pretraining) will not load a saved autoencoder
         result = executor.map(cv_one_model, args)
 
@@ -101,14 +81,14 @@ if __name__ == "__main__":
     print(15 * "=")
 
     saved_results = list()
-    for (model_name, _, _), score in zip(args, result):
-        print(f"{model_name}: {score}")
+    for (model_name, pretraining_size, fine_tuning_size), score in zip(args, result):
+        print(f"{model_name}.{pretraining_size}.{fine_tuning_size}: {score}")
         saved_results.append(score)
 
 
     this_run_df = pd.DataFrame(data={
         'Pretraining': [model_name for (model_name, _, _) in args],
-        'Pretraining Size': [cline_args.n] * len(args),
+        'Pretraining Size': [n for (_, n, _) in args],
         'Fine Tuning Size': [cline_args.m] * len(args),
         'Score': saved_results,
         'Seed': [cline_args.s] * len(args),
