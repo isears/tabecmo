@@ -70,12 +70,6 @@ if __name__ == "__main__":
         right_index=True,
     )
 
-    # Some first-cannulations happen after outtime, for some reason, so we will drop them
-    def drop_first_cannulation_after_outtime(df_in: pd.DataFrame):
-        return df_in[df_in["cannulationtime"] < df_in["outtime"]]
-
-    ecmo_stays = apply_filter(drop_first_cannulation_after_outtime, ecmo_stays)
-
     def drop_short_stays(df_in: pd.DataFrame):
         return df_in[df_in["los"] > 2]
 
