@@ -6,6 +6,7 @@ import tempfile
 from sklearn.metrics import roc_auc_score
 
 from tabecmo.modeling.emrAutoencoder import EmrAutoencoder, EncoderClassifier
+import sys
 
 if __name__ == "__main__":
     pl.seed_everything(42)
