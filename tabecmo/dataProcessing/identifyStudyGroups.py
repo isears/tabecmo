@@ -89,7 +89,12 @@ if __name__ == "__main__":
     def drop_ecmo_subjects(df_in: pd.DataFrame):
         return df_in[~df_in["subject_id"].isin(ecmo_stays["subject_id"])]
 
+    # Some icustay times are NaT
+    def drop_nat_icustays(df_in: pd.DataFrame):
+        return df_in.dropna(subset=["intime", "outtime"], how="any")
+
     general_stays = apply_filter(drop_short_stays, icustays)
+    general_stays = apply_filter(drop_nat_icustays, general_stays)
     general_stays = apply_filter(drop_ecmo_subjects, general_stays)
     general_stays = apply_filter(drop_subsequent_stays_for_subject, general_stays)
 

@@ -15,7 +15,7 @@ class DerivedDataset(torch.utils.data.Dataset):
         "vitalsign",
         "chemistry",
         "coagulation",
-        "differential_detailed",
+        "blood_differential",
         "bg",
         "enzyme",
         "inflammation",
@@ -107,7 +107,7 @@ class DerivedDataset(torch.utils.data.Dataset):
         combined = pd.concat(loaded_dfs, axis="columns")
         # Different data sources may measure same values (for example, blood gas and chemistries)
         # When that happens, just take the mean
-        combined = combined.groupby(by=combined.columns, axis=1).mean()
+        combined = combined.T.groupby(by=combined.columns).mean().transpose()
 
         # Min / max normalization
         for col in combined.columns:
@@ -153,9 +153,7 @@ class SnapshotDataset(DerivedDataset):
         # Truncates ICU stays to 24 hrs before end
         X = X_complete.iloc[:-24]
         X_ffill = (
-            X.applymap(lambda item: float("nan") if item == -1 else item)
-            .fillna(method="ffill")
-            .fillna(-1)
+            X.map(lambda item: float("nan") if item == -1 else item).ffill().fillna(-1)
         )
 
         y = self.__getitem_Y__(stay_id)

@@ -1,5 +1,5 @@
 """
-MIMIC derived tables (list of timestamped events w/event type and value) to 
+MIMIC derived tables (list of timestamped events w/event type and value) to
 multiple individual icu stay timelines (time on axis 0, feature type on axis 1)
 """
 
@@ -8,7 +8,7 @@ import pandas as pd
 standard_tables = [
     "chemistry",
     "coagulation",
-    "differential_detailed",
+    "blood_differential",
     "complete_blood_count",
     "enzyme",
     "inflammation",
@@ -61,7 +61,11 @@ class Derived2Ts:
         intime = self.icustays.loc[stay_id]["icu_intime"]
         outtime = self.icustays.loc[stay_id]["icu_outtime"]
 
-        daterange = pd.date_range(intime, outtime, freq="H")
+        # A small number (~10) stays have no valid outtime, will effectively drop them
+        if outtime is pd.NaT:
+            outtime = intime
+
+        daterange = pd.date_range(intime, outtime, freq="h")
 
         return daterange
 
@@ -240,7 +244,7 @@ class Derived2Ts:
         stay_group[name] = 1.0
 
         stay_group["interval"] = stay_group.apply(
-            lambda x: pd.date_range(x["starttime"], x["endtime"], freq="H"), axis=1
+            lambda x: pd.date_range(x["starttime"], x["endtime"], freq="h"), axis=1
         )
 
         stay_group = (
