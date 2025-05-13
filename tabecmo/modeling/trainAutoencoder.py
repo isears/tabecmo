@@ -1,4 +1,3 @@
-
 import numpy as np
 import pytorch_lightning as pl
 import torch
@@ -13,12 +12,15 @@ import shutil
 
 import argparse
 
+
 def train_one_autoencoder(x_path: str, icu_name: str, pretraining_size: int):
     print(f"[*] Training {icu_name} autoencoder with input tensor: {x_path}")
     X_pretraining = torch.load(x_path).float()
 
     if pretraining_size > 0:
-        indices = np.random.choice(range(0, X_pretraining.shape[0]), size=pretraining_size, replace=False)
+        indices = np.random.choice(
+            range(0, X_pretraining.shape[0]), size=pretraining_size, replace=False
+        )
         X_pretraining = X_pretraining[indices]
 
     print(X_pretraining.shape)
@@ -48,6 +50,7 @@ def train_one_autoencoder(x_path: str, icu_name: str, pretraining_size: int):
             checkpointer,
         ],
         default_root_dir=f"cache/autoenc_{icu_name}",
+        devices=[0],
     )
 
     trainer.fit(
@@ -56,7 +59,10 @@ def train_one_autoencoder(x_path: str, icu_name: str, pretraining_size: int):
         val_dataloaders=torch.utils.data.TensorDataset(X_valid),
     )
 
-    shutil.copy(checkpointer.best_model_path, f"cache/saved_autoenc/{icu_name}.n{pretraining_size}.ckpt")
+    shutil.copy(
+        checkpointer.best_model_path,
+        f"cache/saved_autoenc/{icu_name}.n{pretraining_size}.ckpt",
+    )
 
     return checkpointer.best_model_path, checkpointer.best_model_score
 
@@ -64,17 +70,13 @@ def train_one_autoencoder(x_path: str, icu_name: str, pretraining_size: int):
 def argparse_setup():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        'x_path',
+        "x_path",
     )
 
-    parser.add_argument(
-        '-n',
-        type=int,
-        default=0,
-        dest='n'
-    )
+    parser.add_argument("-n", type=int, default=0, dest="n")
 
     return parser.parse_args()
+
 
 if __name__ == "__main__":
     pl.seed_everything(42)
@@ -94,5 +96,6 @@ if __name__ == "__main__":
         "X_Trauma.SICU.pt": "tsicu",
     }
 
-    train_one_autoencoder(args.x_path, path_name_map[args.x_path.split('/')[-1]], args.n)
-
+    train_one_autoencoder(
+        args.x_path, path_name_map[args.x_path.split("/")[-1]], args.n
+    )

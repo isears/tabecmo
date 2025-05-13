@@ -77,6 +77,8 @@ features = [
     "total_protein",
     "totalco2",
     "ventilation",
+    "age",
+    "gender",
 ]
 
 feat_category_map = {
@@ -157,4 +159,6 @@ feat_category_map = {
     "total_protein": "LFTs",
     "totalco2": "Blood Gases",
     "ventilation": "Procedures",
+    "age": "Age",
+    "gender": "Gender",
 }

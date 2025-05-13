@@ -19,6 +19,7 @@ def do_one_fold(X_train, X_test, y_train, y_test, model):
         logger=False,
         enable_progress_bar=False,
         default_root_dir=temp_dir_model.name,
+        devices=[0],
     )
     trainer.fit(
         this_fold_model,

@@ -54,10 +54,11 @@ class DerivedDataset(torch.utils.data.Dataset):
 
         self.stats = pd.read_parquet("mimiciv_derived/processed/stats.parquet")
 
-        self.labels = pd.read_parquet("mimiciv_derived/icustay_detail.parquet")
-        self.labels = self.labels.set_index("stay_id")["hospital_expire_flag"].astype(
-            int
-        )
+        self.demographics = pd.read_parquet(
+            f"mimiciv_derived/icustay_detail.parquet"
+        ).set_index("stay_id")
+
+        self.labels = self.demographics["hospital_expire_flag"].astype(int)
 
     def maxlen_padmask_collate(self, batch):
         """
@@ -116,6 +117,11 @@ class DerivedDataset(torch.utils.data.Dataset):
                     self.stats[col].loc["max"] - self.stats[col].loc["min"]
                 )
 
+        # Add in age (normalized) and gender
+        combined["age"] = self.demographics.loc[stay_id]["admission_age"] / 100
+        combined["gender"] = (
+            1.0 if self.demographics.loc[stay_id]["gender"] == "F" else 0.0
+        )
         combined = combined.reindex(columns=self.features)
 
         # Fill meds related missing values w/0.0, b/c missingness implies drugs were not administered
